@@ -1,0 +1,76 @@
+name: Package
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'media/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/package.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'media/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/package.yml'
+
+jobs:
+  package:
+    name: Create VSIX
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+      with:
+        node-version: '20.x'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+      with:
+        version: 8
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Create VSIX package
+      run: pnpm run package
+
+    - name: Get package version
+      id: package-version
+      run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+    - name: Upload VSIX artifact
+      uses: actions/upload-artifact@00ffe26b55af5ce91ffdd0c695aa704ab9a6c5e1 # v4.6.2
+      with:
+        name: whizbang-${{ steps.package-version.outputs.version }}
+        path: '*.vsix'
+        retention-days: 30
+
+    - name: Verify VSIX
+      run: |
+        if [ ! -f whizbang-${{ steps.package-version.outputs.version }}.vsix ]; then
+          echo "Error: VSIX file not created"
+          exit 1
+        fi
+        echo "✓ VSIX package created successfully: whizbang-${{ steps.package-version.outputs.version }}.vsix"
