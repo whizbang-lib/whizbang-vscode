@@ -1,0 +1,122 @@
+{
+  "name": "whizbang",
+  "displayName": "Whizbang",
+  "description": "Development-time navigation and runtime debugging for Whizbang event-driven applications",
+  "version": "0.1.0",
+  "publisher": "SoftwareExtravaganza",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Debuggers",
+    "Visualization"
+  ],
+  "keywords": [
+    "whizbang",
+    "event-driven",
+    "cqrs",
+    "message-flow",
+    "distributed-systems"
+  ],
+  "activationEvents": [
+    "onLanguage:csharp",
+    "workspaceContains:**/*.csproj"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "whizbang.goToDispatcher",
+        "title": "Whizbang: Go to Dispatcher"
+      },
+      {
+        "command": "whizbang.goToReceptor",
+        "title": "Whizbang: Go to Receptor"
+      },
+      {
+        "command": "whizbang.goToPerspective",
+        "title": "Whizbang: Go to Perspective"
+      },
+      {
+        "command": "whizbang.findMessageUsages",
+        "title": "Whizbang: Find Message Usages"
+      },
+      {
+        "command": "whizbang.showFlowDiagram",
+        "title": "Whizbang: Show Flow Diagram"
+      },
+      {
+        "command": "whizbang.refreshMessageRegistry",
+        "title": "Whizbang: Refresh Message Registry"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceLangId == csharp",
+          "command": "whizbang.findMessageUsages",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Whizbang",
+      "properties": {
+        "whizbang.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable code lens annotations for messages, dispatchers, and receptors"
+        },
+        "whizbang.enableHoverInfo": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable hover tooltips showing message flow information"
+        },
+        "whizbang.messageRegistryPath": {
+          "type": "string",
+          "default": ".whizbang/message-registry.json",
+          "description": "Path to the message registry JSON file (relative to workspace root)"
+        },
+        "whizbang.autoGenerateRegistry": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically generate message registry on build"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "pnpm run compile",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "pnpm run compile && vsce package --no-dependencies",
+    "install-local": "pnpm run package && code --install-extension whizbang-0.1.0.vsix",
+    "reinstall": "code --uninstall-extension SoftwareExtravaganza.whizbang && pnpm run install-local"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "glob": "^10.3.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whizbang-lib/whizbang-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/whizbang-lib/whizbang-vscode/issues"
+  },
+  "homepage": "https://whizba.ng/",
+  "license": "MIT"
+}
