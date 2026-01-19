@@ -3,7 +3,8 @@
   "displayName": "Whizbang",
   "description": "Development-time navigation and runtime debugging for Whizbang event-driven applications",
   "version": "0.1.0",
-  "publisher": "whizbang-lib",
+  "publisher": "SoftwareExtravaganza",
+  "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -95,7 +96,7 @@
     "test": "node ./out/test/runTest.js",
     "package": "pnpm run compile && vsce package --no-dependencies",
     "install-local": "pnpm run package && code --install-extension whizbang-0.1.0.vsix",
-    "reinstall": "code --uninstall-extension whizbang-lib.whizbang && pnpm run install-local"
+    "reinstall": "code --uninstall-extension SoftwareExtravaganza.whizbang && pnpm run install-local"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

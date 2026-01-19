@@ -4,7 +4,7 @@
 [![Lint](https://github.com/whizbang-lib/whizbang-vscode/actions/workflows/lint.yml/badge.svg)](https://github.com/whizbang-lib/whizbang-vscode/actions/workflows/lint.yml)
 [![Tests](https://github.com/whizbang-lib/whizbang-vscode/actions/workflows/test.yml/badge.svg)](https://github.com/whizbang-lib/whizbang-vscode/actions/workflows/test.yml)
 [![Version](https://img.shields.io/github/package-json/v/whizbang-lib/whizbang-vscode)](https://github.com/whizbang-lib/whizbang-vscode)
-[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/whizbang-lib.whizbang)](https://marketplace.visualstudio.com/items?itemName=whizbang-lib.whizbang)
+[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/SoftwareExtravaganza.whizbang)](https://marketplace.visualstudio.com/items?itemName=SoftwareExtravaganza.whizbang)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Navigate message flows in Whizbang event-driven applications with GitLens-style code annotations.
