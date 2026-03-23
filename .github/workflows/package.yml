@@ -3,20 +3,8 @@ name: Package
 on:
   push:
     branches: [ main, develop ]
-    paths:
-      - 'src/**'
-      - 'media/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/package.yml'
   pull_request:
     branches: [ main, develop ]
-    paths:
-      - 'src/**'
-      - 'media/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/package.yml'
 
 jobs:
   package:
