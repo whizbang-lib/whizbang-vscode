@@ -6,7 +6,7 @@ This repository follows Git Flow. Branch direction is enforced by CI.
 
 | Branch | Purpose | Merges Into |
 |--------|---------|-------------|
-| `main` | Production (triggers Marketplace publish on tag) | — |
+| `main` | Production (triggers Marketplace publish on merge) | — |
 | `develop` | Integration branch | `main` (via release) |
 | `feature/*`, `feat/*` | New features | `develop` |
 | `fix/*` | Bug fixes | `develop` |
@@ -35,17 +35,21 @@ All other directions are blocked by the `git-flow-check` workflow.
 2. Open PR targeting `develop`
 3. CI runs build, lint, and package checks automatically
 4. Merge to `develop`
-5. When ready to release: create `release/x.y.z` branch from `develop`
-6. Open PR from `release/x.y.z` to `main`
-7. Merge to `main`, then tag `vx.y.z` to trigger Marketplace publish
+5. When ready to release: run the **Start Release** workflow (see below)
+6. Review and merge the auto-created release PR to `main`
+7. Release workflow automatically tags, publishes to Marketplace, and syncs develop
 
 ## Publishing
 
-Publishing to the VS Code Marketplace is triggered by pushing a version tag:
+Publishing is fully automated via the **Start Release** workflow:
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-This triggers the `publish.yml` workflow which builds, packages, publishes to the Marketplace, and creates a GitHub Release.
+1. Go to **Actions → Start Release → Run workflow**
+2. Select release type: `major`, `minor`, `patch`, or `manual`
+3. The workflow creates a `release/vX.Y.Z` branch, bumps `package.json`, and opens a PR to `main`
+4. Review the PR and merge it
+5. On merge, the **Release** workflow automatically:
+   - Creates git tag `vX.Y.Z`
+   - Builds and packages the VSIX
+   - Publishes to the VS Code Marketplace
+   - Creates a GitHub Release with the VSIX artifact
+   - Syncs `main` back into `develop`
