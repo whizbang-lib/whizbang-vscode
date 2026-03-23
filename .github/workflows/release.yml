@@ -1,0 +1,494 @@
+name: Release
+
+on:
+  # Trigger when a release PR is merged to main
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+  # Keep manual trigger for dry runs
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact version to release (e.g., 1.2.3 or 1.2.3-beta.1). Leave empty for dry run.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (calculate version only, no tag or release)'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Only run if this is a merged release PR or a manual trigger
+  check-release:
+    name: Check Release Conditions
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check if release should proceed
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            if [ "$DRY_RUN" == "true" ]; then
+              echo "Manual trigger - dry run mode"
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              echo "version=" >> "$GITHUB_OUTPUT"
+            else
+              echo "Manual trigger - release mode"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+              echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$PR_MERGED" == "true" ]; then
+            # Check if PR title matches release pattern
+            if [[ "$PR_TITLE" =~ ^chore\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+.*) ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+              echo "Release PR merged - version: $VERSION"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+              echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            else
+              echo "PR merged but not a release PR"
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              echo "version=" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "PR not merged, skipping"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ============================================================================
+  # Version Display (dry run only)
+  # ============================================================================
+
+  version:
+    name: Display Version Info
+    needs: check-release
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Read Current Version
+        id: current
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Display Version Info
+        env:
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          echo "## Version Information" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Current Version | \`$CURRENT_VERSION\` |" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "| Release Version | \`$INPUT_VERSION\` |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "| Dry Run | $DRY_RUN |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # Approval Flow
+  # ============================================================================
+
+  notify-approval-needed:
+    name: Notify Approval Needed
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true' && vars.PUSHOVER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: .github/actions/notify-pushover
+
+      - name: Send Approval Notification
+        uses: ./.github/actions/notify-pushover
+        with:
+          api-token: ${{ secrets.PUSHOVER_API_TOKEN }}
+          user-key-1: ${{ secrets.PUSHOVER_USER_KEY_1 }}
+          user-key-2: ${{ secrets.PUSHOVER_USER_KEY_2 }}
+          user-key-3: ${{ secrets.PUSHOVER_USER_KEY_3 }}
+          user-key-4: ${{ secrets.PUSHOVER_USER_KEY_4 }}
+          user-key-5: ${{ secrets.PUSHOVER_USER_KEY_5 }}
+          user-key-6: ${{ secrets.PUSHOVER_USER_KEY_6 }}
+          user-key-7: ${{ secrets.PUSHOVER_USER_KEY_7 }}
+          user-key-8: ${{ secrets.PUSHOVER_USER_KEY_8 }}
+          user-key-9: ${{ secrets.PUSHOVER_USER_KEY_9 }}
+          user-key-10: ${{ secrets.PUSHOVER_USER_KEY_10 }}
+          title: "[VSCODE] 🔑 Release v${{ needs.check-release.outputs.version }} needs approval"
+          message: "Release v${{ needs.check-release.outputs.version }} is ready for approval"
+          status: approval-needed
+          url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          url-title: "Approve Release"
+
+  approve:
+    name: Approve Release
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    environment: vscode-publish
+    steps:
+      - name: Release approved
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+        run: echo "Release v$VERSION approved"
+
+  # ============================================================================
+  # Release - Create tag and GitHub Release
+  # ============================================================================
+
+  release:
+    name: Create Release
+    needs: [check-release, approve]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check if version already exists
+        env:
+          RELEASE_VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          VERSION="$RELEASE_VERSION"
+          TAG="v$VERSION"
+
+          # Check if tag already exists locally
+          if git tag -l "$TAG" | grep -q "$TAG"; then
+            echo "::error::Tag $TAG already exists locally"
+            exit 1
+          fi
+
+          # Check if tag exists on remote
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
+            echo "::error::Tag $TAG already exists on remote. Version $VERSION has already been released."
+            exit 1
+          fi
+
+          echo "Version $VERSION is available for release"
+
+      - name: Create and Push Tag
+        env:
+          RELEASE_VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          VERSION="$RELEASE_VERSION"
+          TAG="v$VERSION"
+
+          echo "Creating tag: $TAG"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release (stable)
+        if: ${{ !contains(needs.check-release.outputs.version, '-') }}
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.2.1
+        with:
+          tag_name: v${{ needs.check-release.outputs.version }}
+          name: Release v${{ needs.check-release.outputs.version }}
+          generate_release_notes: true
+          prerelease: false
+          draft: true
+
+      - name: Create GitHub Pre-Release
+        if: ${{ contains(needs.check-release.outputs.version, '-') }}
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.2.1
+        with:
+          tag_name: v${{ needs.check-release.outputs.version }}
+          name: Pre-release v${{ needs.check-release.outputs.version }}
+          generate_release_notes: true
+          prerelease: true
+          draft: true
+
+      - name: Summary
+        env:
+          RELEASE_VERSION: ${{ needs.check-release.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "## Release Created" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: v$RELEASE_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag**: [v$RELEASE_VERSION](https://github.com/$REPO/releases/tag/v$RELEASE_VERSION)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Build and publish will run next." >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # Build, Package, and Publish to Marketplace
+  # ============================================================================
+
+  publish:
+    name: Publish to Marketplace
+    needs: [check-release, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: v${{ needs.check-release.outputs.version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '20.x'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile extension
+        run: pnpm run vscode:prepublish
+
+      - name: Verify output
+        run: |
+          if [ ! -f "./out/extension.js" ]; then
+            echo "::error::Compilation failed - extension.js not found"
+            exit 1
+          fi
+          echo "✓ Build successful"
+
+      - name: Create VSIX package
+        run: pnpm run package
+
+      - name: Verify VSIX
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          if [ ! -f "whizbang-${VERSION}.vsix" ]; then
+            echo "::error::VSIX file not created: whizbang-${VERSION}.vsix"
+            ls -la *.vsix 2>/dev/null || echo "No .vsix files found"
+            exit 1
+          fi
+          echo "✓ VSIX package created: whizbang-${VERSION}.vsix"
+
+      - name: Publish to VS Code Marketplace
+        run: |
+          npx @vscode/vsce publish --pat ${{ secrets.VSCE_PAT }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Generate SHA256 hash
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          sha256sum "whizbang-${VERSION}.vsix" > "whizbang-${VERSION}.vsix.sha256"
+
+      - name: Upload VSIX to GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.2.1
+        with:
+          tag_name: v${{ needs.check-release.outputs.version }}
+          files: |
+            *.vsix
+            *.sha256
+          fail_on_unmatched_files: false
+          draft: false
+
+      - name: Summary
+        env:
+          VERSION: ${{ needs.check-release.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "## Published to Marketplace" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Marketplace**: [SoftwareExtravaganza.whizbang](https://marketplace.visualstudio.com/items?itemName=SoftwareExtravaganza.whizbang)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Release**: [v$VERSION](https://github.com/$REPO/releases/tag/v$VERSION)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ Extension published to VS Code Marketplace" >> "$GITHUB_STEP_SUMMARY"
+          echo "✓ VSIX uploaded to GitHub Release" >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # Sync main back to develop
+  # ============================================================================
+
+  sync-develop:
+    name: Sync Main to Develop
+    needs: [check-release, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge main into develop
+        env:
+          RELEASE_VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          echo "Syncing main -> develop after v$RELEASE_VERSION release"
+
+          # Fetch all branches
+          git fetch origin main develop
+
+          # Checkout develop
+          git checkout develop
+
+          # Merge main into develop (should be fast-forward or simple merge)
+          if git merge origin/main --no-edit -m "chore: sync main into develop after v$RELEASE_VERSION release"; then
+            echo "Successfully merged main into develop"
+            git push origin develop
+          else
+            echo "::warning::Merge conflict detected. Manual intervention may be required."
+            git merge --abort
+            exit 1
+          fi
+
+      - name: Summary
+        env:
+          RELEASE_VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          echo "## Develop Branch Synced" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Main has been merged into develop after v$RELEASE_VERSION release." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "This ensures develop has all release commits (version bumps, etc.)." >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # Notifications
+  # ============================================================================
+
+  notify-release-failed:
+    name: Notify Release Failed
+    needs: [check-release, release, publish]
+    if: >-
+      always() &&
+      needs.check-release.outputs.should_release == 'true' &&
+      (needs.release.result == 'failure' || needs.publish.result == 'failure') &&
+      vars.PUSHOVER_ENABLED == 'true'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: .github/actions/notify-pushover
+
+      - name: Determine failed job
+        id: failed
+        env:
+          RELEASE_RESULT: ${{ needs.release.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+        run: |
+          if [ "$RELEASE_RESULT" == "failure" ]; then
+            echo "job=tag creation" >> "$GITHUB_OUTPUT"
+          elif [ "$PUBLISH_RESULT" == "failure" ]; then
+            echo "job=Marketplace publish" >> "$GITHUB_OUTPUT"
+          else
+            echo "job=unknown" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send Notification
+        uses: ./.github/actions/notify-pushover
+        with:
+          api-token: ${{ secrets.PUSHOVER_API_TOKEN }}
+          user-key-1: ${{ secrets.PUSHOVER_USER_KEY_1 }}
+          user-key-2: ${{ secrets.PUSHOVER_USER_KEY_2 }}
+          user-key-3: ${{ secrets.PUSHOVER_USER_KEY_3 }}
+          user-key-4: ${{ secrets.PUSHOVER_USER_KEY_4 }}
+          user-key-5: ${{ secrets.PUSHOVER_USER_KEY_5 }}
+          user-key-6: ${{ secrets.PUSHOVER_USER_KEY_6 }}
+          user-key-7: ${{ secrets.PUSHOVER_USER_KEY_7 }}
+          user-key-8: ${{ secrets.PUSHOVER_USER_KEY_8 }}
+          user-key-9: ${{ secrets.PUSHOVER_USER_KEY_9 }}
+          user-key-10: ${{ secrets.PUSHOVER_USER_KEY_10 }}
+          title: "[VSCODE] ❌ Release v${{ needs.check-release.outputs.version }} Failed"
+          message: "Release failed at: ${{ steps.failed.outputs.job }}"
+          status: deploy-failed
+          url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          url-title: "View Workflow"
+
+  notify-release-success:
+    name: Notify Release Success
+    needs: [check-release, publish]
+    if: >-
+      needs.check-release.outputs.should_release == 'true' &&
+      needs.publish.result == 'success' &&
+      vars.PUSHOVER_ENABLED == 'true'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: .github/actions/notify-pushover
+
+      - name: Send Notification
+        uses: ./.github/actions/notify-pushover
+        with:
+          api-token: ${{ secrets.PUSHOVER_API_TOKEN }}
+          user-key-1: ${{ secrets.PUSHOVER_USER_KEY_1 }}
+          user-key-2: ${{ secrets.PUSHOVER_USER_KEY_2 }}
+          user-key-3: ${{ secrets.PUSHOVER_USER_KEY_3 }}
+          user-key-4: ${{ secrets.PUSHOVER_USER_KEY_4 }}
+          user-key-5: ${{ secrets.PUSHOVER_USER_KEY_5 }}
+          user-key-6: ${{ secrets.PUSHOVER_USER_KEY_6 }}
+          user-key-7: ${{ secrets.PUSHOVER_USER_KEY_7 }}
+          user-key-8: ${{ secrets.PUSHOVER_USER_KEY_8 }}
+          user-key-9: ${{ secrets.PUSHOVER_USER_KEY_9 }}
+          user-key-10: ${{ secrets.PUSHOVER_USER_KEY_10 }}
+          title: "[VSCODE] ✅ v${{ needs.check-release.outputs.version }} Published"
+          message: "Whizbang VSCode extension v${{ needs.check-release.outputs.version }} published to Marketplace"
+          status: deployed
+          url: "https://marketplace.visualstudio.com/items?itemName=SoftwareExtravaganza.whizbang"
+          url-title: "View on Marketplace"
