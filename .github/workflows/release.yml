@@ -359,6 +359,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -367,40 +368,37 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Merge main into develop
+      - name: Create sync PR
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ needs.check-release.outputs.version }}
         run: |
-          echo "Syncing main -> develop after v$RELEASE_VERSION release"
+          echo "Creating PR to sync main -> develop after v$RELEASE_VERSION release"
 
-          # Fetch all branches
-          git fetch origin main develop
-
-          # Checkout develop
-          git checkout develop
-
-          # Merge main into develop (should be fast-forward or simple merge)
-          if git merge origin/main --no-edit -m "chore: sync main into develop after v$RELEASE_VERSION release"; then
-            echo "Successfully merged main into develop"
-            git push origin develop
-          else
-            echo "::warning::Merge conflict detected. Manual intervention may be required."
-            git merge --abort
-            exit 1
+          # Check if there are actual differences
+          DIFF=$(gh api repos/${{ github.repository }}/compare/develop...main --jq '.total_commits')
+          if [ "$DIFF" = "0" ]; then
+            echo "No differences between main and develop. Skipping sync."
+            exit 0
           fi
+
+          # Create PR from main to develop (allowed by git-flow rules)
+          gh pr create \
+            --base develop \
+            --head main \
+            --title "chore: sync main into develop after v$RELEASE_VERSION release" \
+            --body "Automated sync of \`main\` into \`develop\` after v$RELEASE_VERSION release.
+
+          This ensures develop has the version bump commit from the release." \
+            --label "automated" || echo "::warning::PR may already exist"
 
       - name: Summary
         env:
           RELEASE_VERSION: ${{ needs.check-release.outputs.version }}
         run: |
-          echo "## Develop Branch Synced" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Develop Sync PR Created" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Main has been merged into develop after v$RELEASE_VERSION release." >> "$GITHUB_STEP_SUMMARY"
+          echo "A PR has been created to sync main into develop after v$RELEASE_VERSION release." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "This ensures develop has all release commits (version bumps, etc.)." >> "$GITHUB_STEP_SUMMARY"
 
