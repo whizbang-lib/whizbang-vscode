@@ -3,20 +3,8 @@ name: Build
 on:
   push:
     branches: [ main, develop ]
-    paths:
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'tsconfig.json'
-      - '.github/workflows/build.yml'
   pull_request:
     branches: [ main, develop ]
-    paths:
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'tsconfig.json'
-      - '.github/workflows/build.yml'
 
 jobs:
   build:
