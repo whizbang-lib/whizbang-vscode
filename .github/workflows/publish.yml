@@ -15,6 +15,8 @@ jobs:
     name: Publish to Marketplace
     runs-on: ubuntu-latest
     environment: vscode-publish
+    outputs:
+      version: ${{ steps.package-version.outputs.version }}
 
     steps:
     - name: Checkout repository
@@ -75,3 +77,16 @@ jobs:
         echo "✓ Extension published to VS Code Marketplace"
         echo "✓ VSIX uploaded to GitHub Release"
         echo "Version: ${{ steps.package-version.outputs.version }}"
+
+  notify:
+    name: Notify Publish Status
+    needs: publish
+    if: always()
+    uses: ./.github/workflows/notify-build-status.yml
+    with:
+      status: ${{ needs.publish.result == 'success' && 'deployed' || 'deploy-failed' }}
+      title: "[VSCODE] Extension v${{ needs.publish.outputs.version }} Published"
+      message: "Whizbang VSCode extension published to Marketplace"
+    secrets:
+      PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
+      PUSHOVER_USER_KEY_1: ${{ secrets.PUSHOVER_USER_KEY_1 }}
