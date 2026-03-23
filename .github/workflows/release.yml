@@ -315,7 +315,7 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         run: |
-          npx @vscode/vsce publish --pat ${{ secrets.VSCE_PAT }}
+          pnpm exec vsce publish --no-dependencies --pat ${{ secrets.VSCE_PAT }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
