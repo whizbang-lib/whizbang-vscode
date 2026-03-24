@@ -2,7 +2,11 @@
   "name": "whizbang",
   "displayName": "Whizbang",
   "description": "Development-time navigation and runtime debugging for Whizbang event-driven applications",
+<<<<<<< release/v0.7.0
   "version": "0.7.0",
+=======
+  "version": "0.6.1",
+>>>>>>> main
   "publisher": "SoftwareExtravaganza",
   "icon": "media/icon.png",
   "engines": {
