@@ -83,6 +83,16 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically generate message registry on build"
+        },
+        "whizbang.docsBaseUrl": {
+          "type": "string",
+          "default": "https://whizbang-lib.github.io",
+          "description": "Base URL for the Whizbang documentation site"
+        },
+        "whizbang.docsCacheTtlHours": {
+          "type": "number",
+          "default": 24,
+          "description": "Hours to cache the type documentation feed before refreshing"
         }
       }
     }
