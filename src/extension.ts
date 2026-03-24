@@ -3,9 +3,11 @@ import * as path from 'path';
 import { RegistryLoader } from './registryLoader';
 import { MessageCodeLensProvider } from './codeLensProvider';
 import { MessageHoverProvider } from './hoverProvider';
+import { TypeDocsProvider } from './typeDocsProvider';
 import { MessageInfo, CodeLocation, TestInfo } from './types';
 
 let registryLoader: RegistryLoader;
+let typeDocsProvider: TypeDocsProvider;
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('Whizbang extension is now active!');
@@ -27,8 +29,14 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Initialize type docs provider (fetches from docs site)
+  typeDocsProvider = new TypeDocsProvider(context);
+  typeDocsProvider.initialize().catch(err => {
+    console.warn('Whizbang: Type docs provider initialization failed:', err);
+  });
+
   // Register Hover provider
-  const hoverProvider = new MessageHoverProvider(registryLoader);
+  const hoverProvider = new MessageHoverProvider(registryLoader, typeDocsProvider);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ language: 'csharp', scheme: 'file' }, hoverProvider)
   );
@@ -103,6 +111,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Add cleanup
   context.subscriptions.push(registryLoader);
   context.subscriptions.push(codeLensProvider);
+  context.subscriptions.push(typeDocsProvider);
 }
 
 export function deactivate() {
