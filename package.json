@@ -2,7 +2,7 @@
   "name": "whizbang",
   "displayName": "Whizbang",
   "description": "Development-time navigation and runtime debugging for Whizbang event-driven applications",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "publisher": "SoftwareExtravaganza",
   "icon": "media/icon.png",
   "engines": {
@@ -83,6 +83,16 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically generate message registry on build"
+        },
+        "whizbang.docsBaseUrl": {
+          "type": "string",
+          "default": "https://whizbang-lib.github.io",
+          "description": "Base URL for the Whizbang documentation site"
+        },
+        "whizbang.docsCacheTtlHours": {
+          "type": "number",
+          "default": 24,
+          "description": "Hours to cache the type documentation feed before refreshing"
         }
       }
     }

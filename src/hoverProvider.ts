@@ -1,9 +1,13 @@
 import * as vscode from 'vscode';
 import { RegistryLoader } from './registryLoader';
+import { TypeDocsProvider } from './typeDocsProvider';
 import { CodeLocation, TestInfo } from './types';
 
 export class MessageHoverProvider implements vscode.HoverProvider {
-  constructor(private registryLoader: RegistryLoader) {}
+  constructor(
+    private registryLoader: RegistryLoader,
+    private typeDocsProvider?: TypeDocsProvider
+  ) {}
 
   public provideHover(
     document: vscode.TextDocument,
@@ -19,7 +23,8 @@ export class MessageHoverProvider implements vscode.HoverProvider {
     const message = this.registryLoader.findMessage(word);
 
     if (!message) {
-      return undefined;
+      // Fallback: check type docs provider for non-message Whizbang types
+      return this.provideTypeDocsHover(word);
     }
 
     const markdown = new vscode.MarkdownString();
@@ -111,6 +116,41 @@ export class MessageHoverProvider implements vscode.HoverProvider {
           }
         }
       }
+    }
+
+    return new vscode.Hover(markdown);
+  }
+
+  private provideTypeDocsHover(word: string): vscode.Hover | undefined {
+    if (!this.typeDocsProvider) {
+      return undefined;
+    }
+
+    const typeInfo = this.typeDocsProvider.getTypeInfo(word);
+    if (!typeInfo) {
+      return undefined;
+    }
+
+    const docsUrl = this.typeDocsProvider.getDocsUrl(word);
+    const markdown = new vscode.MarkdownString();
+    markdown.isTrusted = true;
+
+    // Header
+    const title = typeInfo.title || word;
+    markdown.appendMarkdown(`### Whizbang: ${word}\n\n`);
+
+    if (typeInfo.title) {
+      markdown.appendMarkdown(`**${typeInfo.title}**\n\n`);
+    }
+
+    // Documentation link
+    if (docsUrl) {
+      markdown.appendMarkdown(`[View Documentation](${docsUrl}) 📚\n\n`);
+    }
+
+    // Test count
+    if (typeInfo.tests && typeInfo.tests.length > 0) {
+      markdown.appendMarkdown(`🧪 ${typeInfo.tests.length} test(s)\n`);
     }
 
     return new vscode.Hover(markdown);
