@@ -99,6 +99,18 @@ jobs:
           BRANCH="${{ steps.version.outputs.branch }}"
           git checkout -b "$BRANCH"
 
+      - name: Merge main into release branch
+        run: |
+          # Merge main to ensure release branch has all main commits
+          # This prevents merge conflicts when the PR targets main
+          git fetch origin main
+          if ! git merge origin/main --no-edit -m "chore: merge main into release branch"; then
+            echo "::error::Merge conflict between develop and main. Resolve manually."
+            git merge --abort
+            exit 1
+          fi
+          echo "✓ Main merged into release branch"
+
       - name: Update Version in package.json
         env:
           VERSION: ${{ steps.version.outputs.semver }}
