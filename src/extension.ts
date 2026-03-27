@@ -5,11 +5,15 @@ import { MessageCodeLensProvider } from './codeLensProvider';
 import { MessageHoverProvider } from './hoverProvider';
 import { TypeDocsProvider } from './typeDocsProvider';
 import { MessageInfo, CodeLocation, TestInfo } from './types';
+import { renderAnsiBanner } from './banner';
 
 let registryLoader: RegistryLoader;
 let typeDocsProvider: TypeDocsProvider;
 
 export async function activate(context: vscode.ExtensionContext) {
+  // Show branded banner in a terminal on startup
+  _showBannerTerminal(context);
+
   console.log('Whizbang extension is now active!');
 
   // Initialize registry loader
@@ -232,4 +236,30 @@ async function getMessageAtCursor(): Promise<MessageInfo | undefined> {
 
   const word = editor.document.getText(wordRange);
   return registryLoader.findMessage(word);
+}
+
+function _showBannerTerminal(context: vscode.ExtensionContext): void {
+  const writeEmitter = new vscode.EventEmitter<string>();
+  const closeEmitter = new vscode.EventEmitter<void>();
+
+  const pty: vscode.Pseudoterminal = {
+    onDidWrite: writeEmitter.event,
+    onDidClose: closeEmitter.event,
+    open: () => {
+      const banner = renderAnsiBanner();
+      writeEmitter.fire(banner);
+      writeEmitter.fire('\r\n');
+    },
+    close: () => {
+      // No cleanup needed
+    },
+  };
+
+  const terminal = vscode.window.createTerminal({
+    name: 'Whizbang',
+    pty,
+    isTransient: true,
+  });
+
+  context.subscriptions.push(terminal);
 }

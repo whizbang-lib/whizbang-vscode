@@ -106,7 +106,8 @@
     "test": "node ./out/test/runTest.js",
     "package": "pnpm run compile && vsce package --no-dependencies",
     "install-local": "pnpm run package && code --install-extension whizbang-0.2.0.vsix",
-    "reinstall": "code --uninstall-extension SoftwareExtravaganza.whizbang && pnpm run install-local"
+    "reinstall": "code --uninstall-extension SoftwareExtravaganza.whizbang && pnpm run install-local",
+    "sync-banner": "cp ../whizbang/logo/whizbang-banner.txt src/assets/whizbang-banner.txt"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
