@@ -8,6 +8,7 @@ import { MessageHoverProvider } from './hoverProvider';
 import { TypeDocsProvider } from './typeDocsProvider';
 import { MessageInfo, CodeLocation, TestInfo } from './types';
 import { renderAnsiBanner } from './banner';
+import { DocSearchProvider } from './docSearchProvider';
 
 let registryLoader: RegistryLoader;
 let typeDocsProvider: TypeDocsProvider;
@@ -145,6 +146,12 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('whizbang.openDocs', async (docsUrl: string) => {
       await vscode.env.openExternal(vscode.Uri.parse(docsUrl));
     })
+  );
+
+  // Register documentation search
+  const docSearch = new DocSearchProvider(dataLoader, output);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.searchDocs', () => docSearch.showSearch())
   );
 
   // Add cleanup

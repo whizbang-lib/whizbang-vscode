@@ -50,6 +50,10 @@
       {
         "command": "whizbang.refreshMessageRegistry",
         "title": "Whizbang: Refresh Message Registry"
+      },
+      {
+        "command": "whizbang.searchDocs",
+        "title": "Whizbang: Search Documentation"
       }
     ],
     "menus": {
@@ -61,6 +65,14 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "whizbang.searchDocs",
+        "key": "ctrl+k d",
+        "mac": "cmd+k d",
+        "when": "editorTextFocus"
+      }
+    ],
     "configuration": {
       "title": "Whizbang",
       "properties": {
@@ -93,6 +105,11 @@
           "type": "number",
           "default": 24,
           "description": "Hours to cache the type documentation feed before refreshing"
+        },
+        "whizbang.enableDocSearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable documentation search (Cmd+K D)"
         }
       }
     }
@@ -119,7 +136,8 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "glob": "^12.0.0"
+    "glob": "^12.0.0",
+    "minisearch": "^7.2.0"
   },
   "repository": {
     "type": "git",
