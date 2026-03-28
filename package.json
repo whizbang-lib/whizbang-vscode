@@ -110,6 +110,21 @@
           "type": "boolean",
           "default": true,
           "description": "Enable documentation search (Cmd+K D)"
+        },
+        "whizbang.enableTestCoverage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show test coverage CodeLens for Whizbang types"
+        },
+        "whizbang.localLibraryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Local path to whizbang library repo for test file navigation"
+        },
+        "whizbang.testRepoUrl": {
+          "type": "string",
+          "default": "https://github.com/whizbang-lib/whizbang/blob/develop/",
+          "description": "Base URL for viewing test files online"
         }
       }
     }

@@ -6,6 +6,8 @@ import { RegistryLoader } from './registryLoader';
 import { MessageCodeLensProvider } from './codeLensProvider';
 import { MessageHoverProvider } from './hoverProvider';
 import { TypeDocsProvider } from './typeDocsProvider';
+import { TypeDocIndex } from './typeDocIndex';
+import { TestCoverageProvider, showTestsForSymbol } from './testCoverageProvider';
 import { MessageInfo, CodeLocation, TestInfo } from './types';
 import { renderAnsiBanner } from './banner';
 import { DocSearchProvider } from './docSearchProvider';
@@ -75,8 +77,12 @@ export async function activate(context: vscode.ExtensionContext) {
     output.error('Type docs provider initialization failed', err instanceof Error ? err : undefined);
   });
 
-  // Register Hover provider
-  const hoverProvider = new MessageHoverProvider(registryLoader, output, typeDocsProvider);
+  // Initialize TypeDocIndex (code-docs-map, broader symbol coverage)
+  const typeDocIndex = new TypeDocIndex(dataLoader, output);
+  await typeDocIndex.initialize();
+
+  // Register Hover provider (with both type docs sources)
+  const hoverProvider = new MessageHoverProvider(registryLoader, output, typeDocsProvider, typeDocIndex);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ language: 'csharp', scheme: 'file' }, hoverProvider)
   );
@@ -148,6 +154,25 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Register test coverage CodeLens provider
+  const testCoverage = new TestCoverageProvider(dataLoader, registryLoader, output);
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { language: 'csharp', scheme: 'file' },
+      testCoverage
+    )
+  );
+
+  // Register test navigation command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'whizbang.showTestsForSymbol',
+      async (symbol: string, tests: any[]) => {
+        await showTestsForSymbol(symbol, tests);
+      }
+    )
+  );
+
   // Register documentation search
   const docSearch = new DocSearchProvider(dataLoader, output);
   context.subscriptions.push(
@@ -158,6 +183,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registryLoader);
   context.subscriptions.push(codeLensProvider);
   context.subscriptions.push(typeDocsProvider);
+  context.subscriptions.push(testCoverage);
 
   // 10. Log "Ready in Xms"
   const elapsed = Date.now() - startTime;

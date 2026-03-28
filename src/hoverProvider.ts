@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { RegistryLoader } from './registryLoader';
 import { TypeDocsProvider } from './typeDocsProvider';
+import { TypeDocIndex } from './typeDocIndex';
 import { WhizbangOutputChannel } from './outputChannel';
 import { CodeLocation, TestInfo } from './types';
 
@@ -9,6 +10,7 @@ export class MessageHoverProvider implements vscode.HoverProvider {
     private registryLoader: RegistryLoader,
     private output: WhizbangOutputChannel,
     private typeDocsProvider?: TypeDocsProvider,
+    private typeDocIndex?: TypeDocIndex,
   ) {}
 
   public provideHover(
@@ -25,12 +27,20 @@ export class MessageHoverProvider implements vscode.HoverProvider {
     const message = this.registryLoader.findMessage(word);
 
     if (!message) {
-      // Fallback: check type docs provider for non-message Whizbang types
+      // Fallback 1: check type docs provider (vscode-feed) for non-message Whizbang types
       const hover = this.provideTypeDocsHover(word);
-      if (!hover) {
-        this.output.log(`HoverProvider: No info for '${word}'`);
+      if (hover) {
+        return hover;
       }
-      return hover;
+
+      // Fallback 2: check TypeDocIndex (code-docs-map) for broader symbol coverage
+      const docIndexHover = this.provideDocIndexHover(word);
+      if (docIndexHover) {
+        return docIndexHover;
+      }
+
+      this.output.log(`HoverProvider: No info for '${word}'`);
+      return undefined;
     }
 
     const markdown = new vscode.MarkdownString();
@@ -157,6 +167,39 @@ export class MessageHoverProvider implements vscode.HoverProvider {
     // Test count
     if (typeInfo.tests && typeInfo.tests.length > 0) {
       markdown.appendMarkdown(`🧪 ${typeInfo.tests.length} test(s)\n`);
+    }
+
+    return new vscode.Hover(markdown);
+  }
+
+  private provideDocIndexHover(word: string): vscode.Hover | undefined {
+    if (!this.typeDocIndex) {
+      return undefined;
+    }
+
+    if (!this.typeDocIndex.has(word)) {
+      return undefined;
+    }
+
+    const docUrl = this.typeDocIndex.getDocUrl(word);
+    const sourceFile = this.typeDocIndex.getSourceFile(word);
+    const sourceLine = this.typeDocIndex.getSourceLine(word);
+
+    const markdown = new vscode.MarkdownString();
+    markdown.isTrusted = true;
+
+    // Header
+    markdown.appendMarkdown(`### Whizbang: ${word}\n\n`);
+
+    // Documentation link
+    if (docUrl) {
+      markdown.appendMarkdown(`[View Documentation](${docUrl}) \uD83D\uDCDA\n\n`);
+    }
+
+    // Source file location
+    if (sourceFile) {
+      const location = sourceLine ? `${sourceFile}:${sourceLine}` : sourceFile;
+      markdown.appendMarkdown(`**Source:** \`${location}\`\n`);
     }
 
     return new vscode.Hover(markdown);
