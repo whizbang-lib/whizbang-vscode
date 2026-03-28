@@ -54,6 +54,10 @@
       {
         "command": "whizbang.searchDocs",
         "title": "Whizbang: Search Documentation"
+      },
+      {
+        "command": "whizbang.toggleStatusBar",
+        "title": "Whizbang: Toggle Status Bar"
       }
     ],
     "menus": {
@@ -71,6 +75,30 @@
         "key": "ctrl+k d",
         "mac": "cmd+k d",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "whizbang.goToDispatcher",
+        "key": "ctrl+k ctrl+d",
+        "mac": "cmd+k cmd+d",
+        "when": "editorTextFocus && resourceLangId == csharp"
+      },
+      {
+        "command": "whizbang.goToReceptor",
+        "key": "ctrl+k ctrl+r",
+        "mac": "cmd+k cmd+r",
+        "when": "editorTextFocus && resourceLangId == csharp"
+      },
+      {
+        "command": "whizbang.goToPerspective",
+        "key": "ctrl+k ctrl+p",
+        "mac": "cmd+k cmd+p",
+        "when": "editorTextFocus && resourceLangId == csharp"
+      },
+      {
+        "command": "whizbang.showFlowDiagram",
+        "key": "ctrl+k ctrl+f",
+        "mac": "cmd+k cmd+f",
+        "when": "editorTextFocus && resourceLangId == csharp"
       }
     ],
     "configuration": {

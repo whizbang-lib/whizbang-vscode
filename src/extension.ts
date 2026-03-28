@@ -11,6 +11,8 @@ import { TestCoverageProvider, showTestsForSymbol } from './testCoverageProvider
 import { MessageInfo, CodeLocation, TestInfo } from './types';
 import { renderAnsiBanner } from './banner';
 import { DocSearchProvider } from './docSearchProvider';
+import { showFlowDiagramPanel } from './views/flowDiagramPanel';
+import { StatusBarProvider } from './statusBarProvider';
 
 let registryLoader: RegistryLoader;
 let typeDocsProvider: TypeDocsProvider;
@@ -178,6 +180,35 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.searchDocs', () => docSearch.showSearch())
   );
+
+  // Register flow diagram command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.showFlowDiagram', async () => {
+      const message = await getMessageAtCursor();
+      if (message) {
+        showFlowDiagramPanel(context, message);
+      } else {
+        vscode.window.showInformationMessage('Whizbang: No message found at cursor position');
+      }
+    })
+  );
+
+  // Register status bar provider
+  const statusBar = new StatusBarProvider(registryLoader, dataLoader, output);
+  context.subscriptions.push(statusBar);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.toggleStatusBar', () => {
+      statusBar.toggle();
+    })
+  );
+
+  // Set initial status bar state based on registry
+  if (initialized) {
+    statusBar.updateStatus('ready');
+  } else {
+    statusBar.updateStatus('no-registry');
+  }
 
   // Add cleanup
   context.subscriptions.push(registryLoader);
