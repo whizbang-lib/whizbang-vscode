@@ -1,11 +1,15 @@
 import * as vscode from 'vscode';
 import { RegistryLoader } from './registryLoader';
+import { WhizbangOutputChannel } from './outputChannel';
 
 export class MessageCodeLensProvider implements vscode.CodeLensProvider {
   private onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   public readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
 
-  constructor(private registryLoader: RegistryLoader) {
+  constructor(
+    private registryLoader: RegistryLoader,
+    private output: WhizbangOutputChannel,
+  ) {
     // Refresh code lenses when registry changes
     registryLoader.onRegistryChanged(() => {
       this.onDidChangeCodeLensesEmitter.fire();

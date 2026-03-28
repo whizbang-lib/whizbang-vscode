@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 import { RegistryLoader } from './registryLoader';
 import { TypeDocsProvider } from './typeDocsProvider';
+import { WhizbangOutputChannel } from './outputChannel';
 import { CodeLocation, TestInfo } from './types';
 
 export class MessageHoverProvider implements vscode.HoverProvider {
   constructor(
     private registryLoader: RegistryLoader,
-    private typeDocsProvider?: TypeDocsProvider
+    private output: WhizbangOutputChannel,
+    private typeDocsProvider?: TypeDocsProvider,
   ) {}
 
   public provideHover(
@@ -24,7 +26,11 @@ export class MessageHoverProvider implements vscode.HoverProvider {
 
     if (!message) {
       // Fallback: check type docs provider for non-message Whizbang types
-      return this.provideTypeDocsHover(word);
+      const hover = this.provideTypeDocsHover(word);
+      if (!hover) {
+        this.output.log(`HoverProvider: No info for '${word}'`);
+      }
+      return hover;
     }
 
     const markdown = new vscode.MarkdownString();

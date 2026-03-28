@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { WhizbangOutputChannel } from './outputChannel';
+import { DataLoader } from './dataLoader';
 
 export interface TypeDocInfo {
   docs: string;
@@ -16,24 +18,47 @@ interface VscodeFeed {
   types: Record<string, TypeDocInfo>;
 }
 
-interface CachedFeed {
-  feed: VscodeFeed;
-  fetchedAt: number;
-}
-
-const FEED_URL_PATH = '/assets/vscode-feed.json';
 const DEFAULT_BASE_URL = 'https://whizbang-lib.github.io';
-const DEFAULT_TTL_HOURS = 24;
 
 export class TypeDocsProvider implements vscode.Disposable {
   private feed: VscodeFeed | undefined;
-  private loading: Promise<void> | undefined;
+  private disposables: vscode.Disposable[] = [];
 
-  constructor(private context: vscode.ExtensionContext) {}
+  constructor(
+    private context: vscode.ExtensionContext,
+    private dataLoader: DataLoader,
+    private output: WhizbangOutputChannel,
+  ) {
+    // Listen for data loader updates to vscode-feed
+    this.disposables.push(
+      dataLoader.onDataLoaded(key => {
+        if (key === 'vscode-feed') {
+          this.feed = dataLoader.get<VscodeFeed>('vscode-feed');
+          if (this.feed) {
+            this.output.log(`TypeDocsProvider: Updated with ${Object.keys(this.feed.types).length} type docs`);
+          }
+        }
+      })
+    );
+  }
 
   async initialize(): Promise<void> {
-    this.loading = this.loadFeed();
-    await this.loading;
+    // Try to get already-loaded data from DataLoader (eager preload may have completed)
+    this.feed = this.dataLoader.get<VscodeFeed>('vscode-feed');
+
+    if (this.feed) {
+      this.output.log(`TypeDocsProvider: Initialized with ${Object.keys(this.feed.types).length} type docs`);
+      return;
+    }
+
+    // Wait for it if not yet available
+    const feed = await this.dataLoader.getAsync<VscodeFeed>('vscode-feed');
+    if (feed) {
+      this.feed = feed;
+      this.output.log(`TypeDocsProvider: Initialized with ${Object.keys(this.feed.types).length} type docs`);
+    } else {
+      this.output.warn('TypeDocsProvider: No vscode-feed data available');
+    }
   }
 
   getTypeInfo(symbolName: string): TypeDocInfo | undefined {
@@ -57,65 +82,9 @@ export class TypeDocsProvider implements vscode.Disposable {
   }
 
   dispose(): void {
-    // Nothing to dispose
-  }
-
-  private async loadFeed(): Promise<void> {
-    // Try cache first
-    const cached = this.context.globalState.get<CachedFeed>('whizbang.vscodeFeed');
-    const config = vscode.workspace.getConfiguration('whizbang');
-    const ttlHours = config.get<number>('docsCacheTtlHours', DEFAULT_TTL_HOURS);
-
-    if (cached && Date.now() - cached.fetchedAt < ttlHours * 60 * 60 * 1000) {
-      this.feed = cached.feed;
-      console.log(`Whizbang: Loaded ${Object.keys(this.feed.types).length} type docs from cache`);
-      // Refresh in background if cache is older than half the TTL
-      if (Date.now() - cached.fetchedAt > (ttlHours * 60 * 60 * 1000) / 2) {
-        this.fetchAndCache().catch(() => {}); // Silent background refresh
-      }
-      return;
+    for (const d of this.disposables) {
+      d.dispose();
     }
-
-    // Fetch fresh
-    await this.fetchAndCache();
-
-    // Fall back to stale cache if fetch failed
-    if (!this.feed && cached) {
-      this.feed = cached.feed;
-      console.log('Whizbang: Using stale cache (fetch failed)');
-    }
-  }
-
-  private async fetchAndCache(): Promise<void> {
-    const config = vscode.workspace.getConfiguration('whizbang');
-    const siteBaseUrl = config.get<string>('docsBaseUrl', DEFAULT_BASE_URL);
-    const feedUrl = `${siteBaseUrl}${FEED_URL_PATH}`;
-
-    try {
-      const response = await fetch(feedUrl);
-      if (!response.ok) {
-        console.warn(`Whizbang: Failed to fetch type docs feed: ${response.status}`);
-        return;
-      }
-
-      const feed = (await response.json()) as VscodeFeed;
-
-      if (!feed.types || typeof feed.types !== 'object') {
-        console.warn('Whizbang: Invalid feed format');
-        return;
-      }
-
-      this.feed = feed;
-
-      // Cache it
-      await this.context.globalState.update('whizbang.vscodeFeed', {
-        feed,
-        fetchedAt: Date.now(),
-      } as CachedFeed);
-
-      console.log(`Whizbang: Fetched ${Object.keys(feed.types).length} type docs from ${feedUrl}`);
-    } catch (err) {
-      console.warn(`Whizbang: Could not fetch type docs feed: ${err}`);
-    }
+    this.disposables = [];
   }
 }

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { WhizbangOutputChannel } from './outputChannel';
 import { MessageRegistry, MessageInfo, CodeLocation } from './types';
 
 export class RegistryLoader {
@@ -9,6 +10,8 @@ export class RegistryLoader {
   private watchers: vscode.FileSystemWatcher[] = [];
   private onRegistryChangedEmitter = new vscode.EventEmitter<MessageRegistry>();
   public readonly onRegistryChanged = this.onRegistryChangedEmitter.event;
+
+  constructor(private output: WhizbangOutputChannel) {}
 
   public async initialize(): Promise<boolean> {
     this.registryPaths = await this.findAllRegistryFiles();
@@ -20,7 +23,7 @@ export class RegistryLoader {
       return false;
     }
 
-    console.log(`Found ${this.registryPaths.length} registry file(s): ${this.registryPaths.join(', ')}`);
+    this.output.log(`Found ${this.registryPaths.length} registry file(s): ${this.registryPaths.join(', ')}`);
 
     this.loadAndMergeRegistries();
     this.setupFileWatchers();
@@ -44,7 +47,7 @@ export class RegistryLoader {
           const registry: MessageRegistry = JSON.parse(content);
           registries.push(registry);
         } catch (error) {
-          console.error(`Failed to parse registry at ${registryPath}: ${error}`);
+          this.output.error(`Failed to parse registry at ${registryPath}: ${error}`);
         }
       }
 
@@ -52,16 +55,16 @@ export class RegistryLoader {
       this.registry = this.mergeRegistries(registries);
       this.onRegistryChangedEmitter.fire(this.registry);
 
-      console.log(`Merged ${registries.length} registries into ${this.registry.messages.length} unique messages`);
+      this.output.log(`Merged ${registries.length} registries into ${this.registry.messages.length} unique messages`);
 
       // Log dispatcher/receptor/perspective counts for debugging
       const dispatcherCount = this.registry.messages.reduce((sum, m) => sum + m.dispatchers.length, 0);
       const receptorCount = this.registry.messages.reduce((sum, m) => sum + m.receptors.length, 0);
       const perspectiveCount = this.registry.messages.reduce((sum, m) => sum + m.perspectives.length, 0);
-      console.log(`Total: ${dispatcherCount} dispatchers, ${receptorCount} receptors, ${perspectiveCount} perspectives`);
+      this.output.log(`Total: ${dispatcherCount} dispatchers, ${receptorCount} receptors, ${perspectiveCount} perspectives`);
 
     } catch (error) {
-      console.error(`Failed to load registries: ${error}`);
+      this.output.error(`Failed to load registries: ${error}`);
       this.registry = { messages: [] };
     }
   }
@@ -121,17 +124,17 @@ export class RegistryLoader {
       const watcher = vscode.workspace.createFileSystemWatcher(registryPath);
 
       watcher.onDidChange(() => {
-        console.log(`Registry file changed: ${registryPath}, reloading all...`);
+        this.output.log(`Registry file changed: ${registryPath}, reloading all...`);
         this.loadAndMergeRegistries();
       });
 
       watcher.onDidCreate(() => {
-        console.log(`Registry file created: ${registryPath}, reloading all...`);
+        this.output.log(`Registry file created: ${registryPath}, reloading all...`);
         this.loadAndMergeRegistries();
       });
 
       watcher.onDidDelete(() => {
-        console.log(`Registry file deleted: ${registryPath}, reloading all...`);
+        this.output.log(`Registry file deleted: ${registryPath}, reloading all...`);
         this.loadAndMergeRegistries();
       });
 

@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { WhizbangOutputChannel } from './outputChannel';
+import { DataLoader } from './dataLoader';
 import { RegistryLoader } from './registryLoader';
 import { MessageCodeLensProvider } from './codeLensProvider';
 import { MessageHoverProvider } from './hoverProvider';
@@ -9,23 +11,56 @@ import { renderAnsiBanner } from './banner';
 
 let registryLoader: RegistryLoader;
 let typeDocsProvider: TypeDocsProvider;
+let dataLoader: DataLoader;
 
 export async function activate(context: vscode.ExtensionContext) {
+  const startTime = Date.now();
+
+  // 1. Create output channel FIRST
+  const output = WhizbangOutputChannel.getInstance();
+  context.subscriptions.push(output);
+
+  // 2. Log startup
+  output.log('Whizbang extension activating...');
+
+  // 3. Log settings
+  const config = vscode.workspace.getConfiguration('whizbang');
+  const docsBaseUrl = config.get<string>('docsBaseUrl', 'https://whizbang-lib.github.io');
+  const cacheTtl = config.get<number>('docsCacheTtlHours', 24);
+  output.log(`Settings: docsBaseUrl=${docsBaseUrl}, cacheTtlHours=${cacheTtl}`);
+
   // Show branded banner in a terminal on startup
   _showBannerTerminal(context);
 
-  console.log('Whizbang extension is now active!');
-
-  // Initialize registry loader
-  registryLoader = new RegistryLoader();
+  // 4. Initialize RegistryLoader (pass output channel)
+  registryLoader = new RegistryLoader(output);
   const initialized = await registryLoader.initialize();
 
+  // 5. Log registry status
   if (!initialized) {
-    return; // Extension stays active but provides no features
+    output.warn('No message registries found. Build your project to generate them.');
+    // Extension stays active but provides no features from the registry
+  } else {
+    const registry = registryLoader.getRegistry();
+    output.log(`Registry loaded: ${registry.messages.length} message(s)`);
   }
 
+  // 6. Initialize DataLoader (pass context + output channel)
+  dataLoader = new DataLoader(context, output);
+  context.subscriptions.push(dataLoader);
+
+  // 7. Trigger eager preload
+  dataLoader.preload().then(() => {
+    // 8. Log data load status
+    output.log('DataLoader: Eager preload complete');
+  }).catch(err => {
+    output.error('DataLoader: Eager preload failed', err instanceof Error ? err : undefined);
+  });
+
+  // 9. Register providers (pass output channel)
+
   // Register CodeLens provider
-  const codeLensProvider = new MessageCodeLensProvider(registryLoader);
+  const codeLensProvider = new MessageCodeLensProvider(registryLoader, output);
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       { language: 'csharp', scheme: 'file' },
@@ -33,14 +68,14 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // Initialize type docs provider (fetches from docs site)
-  typeDocsProvider = new TypeDocsProvider(context);
+  // Initialize type docs provider (delegates to DataLoader)
+  typeDocsProvider = new TypeDocsProvider(context, dataLoader, output);
   typeDocsProvider.initialize().catch(err => {
-    console.warn('Whizbang: Type docs provider initialization failed:', err);
+    output.error('Type docs provider initialization failed', err instanceof Error ? err : undefined);
   });
 
   // Register Hover provider
-  const hoverProvider = new MessageHoverProvider(registryLoader, typeDocsProvider);
+  const hoverProvider = new MessageHoverProvider(registryLoader, output, typeDocsProvider);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ language: 'csharp', scheme: 'file' }, hoverProvider)
   );
@@ -116,10 +151,15 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registryLoader);
   context.subscriptions.push(codeLensProvider);
   context.subscriptions.push(typeDocsProvider);
+
+  // 10. Log "Ready in Xms"
+  const elapsed = Date.now() - startTime;
+  output.log(`Ready in ${elapsed}ms`);
 }
 
 export function deactivate() {
-  console.log('Whizbang extension deactivated');
+  const output = WhizbangOutputChannel.getInstance();
+  output.log('Whizbang extension deactivated');
 }
 
 async function navigateToLocation(filePath: string, lineNumber: number): Promise<void> {
