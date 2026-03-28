@@ -1,13 +1,11 @@
 import * as vscode from 'vscode';
-import { RegistryLoader } from './registryLoader';
-import { DataLoader } from './dataLoader';
+import { WhizbangLspClient } from './lspClient';
 import { WhizbangOutputChannel } from './outputChannel';
-import { MessageRegistry } from './types';
 
-type StatusState = 'loading' | 'ready' | 'no-registry' | 'error';
+type StatusState = 'loading' | 'ready' | 'no-registry' | 'no-server' | 'error';
 
 /**
- * Provides a status bar item showing Whizbang registry status.
+ * Provides a status bar item showing Whizbang server status.
  * Click toggles between collapsed and expanded views.
  * Expanded view auto-collapses after 10 seconds.
  */
@@ -16,11 +14,11 @@ export class StatusBarProvider implements vscode.Disposable {
   private expanded = false;
   private collapseTimer: NodeJS.Timeout | undefined;
   private state: StatusState = 'loading';
+  private lastMessageCount = 0;
   private disposables: vscode.Disposable[] = [];
 
   constructor(
-    private registryLoader: RegistryLoader,
-    private dataLoader: DataLoader,
+    private lspClient: WhizbangLspClient,
     private output: WhizbangOutputChannel,
   ) {
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -28,11 +26,11 @@ export class StatusBarProvider implements vscode.Disposable {
     this.updateStatus('loading');
     this.statusBarItem.show();
 
-    // Listen for registry changes
+    // Listen for registry changes from the server
     this.disposables.push(
-      this.registryLoader.onRegistryChanged(() => {
-        const registry = this.registryLoader.getRegistry();
-        if (registry.messages.length > 0) {
+      this.lspClient.onRegistryChanged((params) => {
+        this.lastMessageCount = params.messageCount;
+        if (params.messageCount > 0) {
           this.updateStatus('ready');
         } else {
           this.updateStatus('no-registry');
@@ -68,6 +66,14 @@ export class StatusBarProvider implements vscode.Disposable {
 
     // Auto-collapse after 10 seconds
     if (this.expanded) {
+      // Fetch fresh status from server when expanding
+      this.lspClient.getStatus().then(status => {
+        if (status) {
+          this.lastMessageCount = status.messageCount ?? this.lastMessageCount;
+          this.render();
+        }
+      });
+
       this.collapseTimer = setTimeout(() => {
         this.expanded = false;
         this.render();
@@ -85,8 +91,7 @@ export class StatusBarProvider implements vscode.Disposable {
 
       case 'ready':
         if (this.expanded) {
-          const counts = this.getCounts();
-          this.statusBarItem.text = `$(check) Whizbang: ${counts.total} msgs | ${counts.commands} cmds | ${counts.events} evts`;
+          this.statusBarItem.text = `$(check) Whizbang: ${this.lastMessageCount} msgs`;
         } else {
           this.statusBarItem.text = '$(check) Whizbang';
         }
@@ -98,19 +103,16 @@ export class StatusBarProvider implements vscode.Disposable {
         this.statusBarItem.tooltip = this.buildTooltip();
         break;
 
+      case 'no-server':
+        this.statusBarItem.text = '$(circle-slash) Whizbang';
+        this.statusBarItem.tooltip = this.buildTooltip();
+        break;
+
       case 'error':
         this.statusBarItem.text = '$(error) Whizbang';
         this.statusBarItem.tooltip = this.buildTooltip();
         break;
     }
-  }
-
-  private getCounts(): { total: number; commands: number; events: number } {
-    const registry = this.registryLoader.getRegistry();
-    const total = registry.messages.length;
-    const commands = registry.messages.filter(m => m.isCommand).length;
-    const events = registry.messages.filter(m => m.isEvent).length;
-    return { total, commands, events };
   }
 
   private buildTooltip(): vscode.MarkdownString {
@@ -121,31 +123,18 @@ export class StatusBarProvider implements vscode.Disposable {
     md.appendMarkdown(`**Whizbang Extension v${version}**\n\n---\n\n`);
 
     if (this.state === 'loading') {
-      md.appendMarkdown('Loading registry...\n\n');
+      md.appendMarkdown('Loading...\n\n');
     } else if (this.state === 'no-registry') {
       md.appendMarkdown('No message registry found. Build your project to generate one.\n\n');
+    } else if (this.state === 'no-server') {
+      md.appendMarkdown('Language server not available.\n\n');
+      md.appendMarkdown('Navigation commands still work, but hover, CodeLens,\n');
+      md.appendMarkdown('search, and flow diagrams require the server.\n\n');
     } else if (this.state === 'error') {
-      md.appendMarkdown('Error loading registry.\n\n');
+      md.appendMarkdown('Error communicating with language server.\n\n');
     } else {
-      const counts = this.getCounts();
-      md.appendMarkdown(`Messages: ${counts.total} (${counts.commands} commands, ${counts.events} events)\n\n`);
-
-      // Type docs info
-      const typeDocsFeed = this.dataLoader.get<unknown[]>('vscode-feed');
-      const typeDocsCount = Array.isArray(typeDocsFeed) ? typeDocsFeed.length : 0;
-      md.appendMarkdown(`Type Docs: ${typeDocsCount} symbols loaded\n\n`);
-
-      // Test coverage info
-      const codeTestsMap = this.dataLoader.get<Record<string, unknown>>('code-tests-map');
-      let testCount = 0;
-      if (codeTestsMap && typeof codeTestsMap === 'object') {
-        for (const val of Object.values(codeTestsMap)) {
-          if (Array.isArray(val)) {
-            testCount += val.length;
-          }
-        }
-      }
-      md.appendMarkdown(`Tests: ${testCount.toLocaleString()} mapped\n\n`);
+      md.appendMarkdown(`Messages: ${this.lastMessageCount}\n\n`);
+      md.appendMarkdown(`Server: connected\n\n`);
 
       // Cache info
       const config = vscode.workspace.getConfiguration('whizbang');

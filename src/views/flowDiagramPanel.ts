@@ -1,62 +1,20 @@
 import * as vscode from 'vscode';
-import { MessageInfo } from '../types';
-
-/**
- * Generates a Mermaid flowchart string from a MessageInfo object.
- * Shows: Dispatchers -> Message -> Receptors/Perspectives
- */
-function generateMermaid(message: MessageInfo): string {
-  const lines: string[] = ['graph LR'];
-
-  // Extract short type name from fully-qualified name
-  const shortName = message.type.includes('.')
-    ? message.type.split('.').pop()!
-    : message.type;
-
-  // Dispatchers subgraph
-  if (message.dispatchers.length > 0) {
-    lines.push('  subgraph Dispatchers');
-    for (let i = 0; i < message.dispatchers.length; i++) {
-      const d = message.dispatchers[i];
-      lines.push(`    D${i}[${d.class}.${d.method}]`);
-    }
-    lines.push('  end');
-  }
-
-  // Message node
-  lines.push(`  MSG((${shortName}))`);
-
-  // Dispatcher -> Message edges
-  for (let i = 0; i < message.dispatchers.length; i++) {
-    lines.push(`  D${i} --> MSG`);
-  }
-
-  // Receptor edges
-  for (let i = 0; i < message.receptors.length; i++) {
-    const r = message.receptors[i];
-    lines.push(`  MSG --> R${i}[${r.class}.${r.method}]`);
-  }
-
-  // Perspective edges
-  for (let i = 0; i < message.perspectives.length; i++) {
-    const p = message.perspectives[i];
-    lines.push(`  MSG --> P${i}[${p.class}]`);
-  }
-
-  return lines.join('\n');
-}
 
 /**
  * Creates and shows a WebviewPanel rendering a Mermaid flow diagram
- * for the given message.
+ * using the provided mermaid code string.
+ *
+ * The caller is responsible for obtaining the mermaid code from the
+ * language server via lspClient.generateFlowDiagram().
  */
 export function showFlowDiagramPanel(
   context: vscode.ExtensionContext,
-  message: MessageInfo,
+  messageType: string,
+  mermaidCode: string,
 ): void {
-  const shortName = message.type.includes('.')
-    ? message.type.split('.').pop()!
-    : message.type;
+  const shortName = messageType.includes('.')
+    ? messageType.split('.').pop()!
+    : messageType;
 
   const panel = vscode.window.createWebviewPanel(
     'whizbangFlowDiagram',
@@ -67,7 +25,6 @@ export function showFlowDiagramPanel(
     },
   );
 
-  const mermaidCode = generateMermaid(message);
   const isDark = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark
     || vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrast;
 

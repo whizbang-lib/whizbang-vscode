@@ -153,6 +153,11 @@
           "type": "string",
           "default": "https://github.com/whizbang-lib/whizbang/blob/develop/",
           "description": "Base URL for viewing test files online"
+        },
+        "whizbang.languageServerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Whizbang Language Server executable. Leave empty for auto-detection."
         }
       }
     }
@@ -180,7 +185,7 @@
   },
   "dependencies": {
     "glob": "^12.0.0",
-    "minisearch": "^7.2.0"
+    "vscode-languageclient": "^9.0.1"
   },
   "repository": {
     "type": "git",
