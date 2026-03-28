@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient/node';
 import { WhizbangOutputChannel } from './outputChannel';
+import { SearchResult, SymbolInfo, TestEntry, StatusInfo } from './types';
 
 export class WhizbangLspClient implements vscode.Disposable {
   private client: LanguageClient | undefined;
@@ -121,17 +122,17 @@ export class WhizbangLspClient implements vscode.Disposable {
   }
 
   // Custom request helpers
-  async searchDocs(query: string): Promise<any[]> {
+  async searchDocs(query: string): Promise<SearchResult[]> {
     if (!this.client?.isRunning()) { return []; }
     return this.client.sendRequest('whizbang/searchDocs', { query });
   }
 
-  async getSymbolInfo(symbol: string): Promise<any | null> {
+  async getSymbolInfo(symbol: string): Promise<SymbolInfo | null> {
     if (!this.client?.isRunning()) { return null; }
     return this.client.sendRequest('whizbang/getSymbolInfo', { symbol });
   }
 
-  async getTestsForSymbol(symbol: string): Promise<any[]> {
+  async getTestsForSymbol(symbol: string): Promise<TestEntry[]> {
     if (!this.client?.isRunning()) { return []; }
     return this.client.sendRequest('whizbang/getTestsForSymbol', { symbol });
   }
@@ -141,7 +142,7 @@ export class WhizbangLspClient implements vscode.Disposable {
     return this.client.sendRequest('whizbang/generateFlowDiagram', { messageType });
   }
 
-  async getStatus(): Promise<any | null> {
+  async getStatus(): Promise<StatusInfo | null> {
     if (!this.client?.isRunning()) { return null; }
     return this.client.sendRequest('whizbang/getStatus', {});
   }

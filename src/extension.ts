@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { WhizbangOutputChannel } from './outputChannel';
 import { WhizbangLspClient } from './lspClient';
-import { MessageInfo, CodeLocation, TestInfo } from './types';
+import { MessageInfo, CodeLocation, TestInfo, TestEntry, SymbolInfo } from './types';
 import { renderAnsiBanner } from './banner';
 import { DocSearchProvider } from './docSearchProvider';
 import { showFlowDiagramPanel } from './views/flowDiagramPanel';
@@ -68,27 +68,39 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToDispatcher', async () => {
-      const message = await getMessageAtCursor();
-      if (message) {
-        await showLocations(message.dispatchers, 'Dispatchers');
+      const info = await getSymbolAtCursor();
+      if (info) {
+        if (info.dispatcherCount > 0) {
+          vscode.window.showInformationMessage(`${info.name}: ${info.dispatcherCount} dispatcher(s) — use CodeLens to navigate`);
+        } else {
+          vscode.window.showInformationMessage(`No dispatchers found for ${info.name}`);
+        }
       }
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToReceptor', async () => {
-      const message = await getMessageAtCursor();
-      if (message) {
-        await showLocations(message.receptors, 'Receptors');
+      const info = await getSymbolAtCursor();
+      if (info) {
+        if (info.receptorCount > 0) {
+          vscode.window.showInformationMessage(`${info.name}: ${info.receptorCount} receptor(s) — use CodeLens to navigate`);
+        } else {
+          vscode.window.showInformationMessage(`No receptors found for ${info.name}`);
+        }
       }
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToPerspective', async () => {
-      const message = await getMessageAtCursor();
-      if (message) {
-        await showLocations(message.perspectives, 'Perspectives');
+      const info = await getSymbolAtCursor();
+      if (info) {
+        if (info.perspectiveCount > 0) {
+          vscode.window.showInformationMessage(`${info.name}: ${info.perspectiveCount} perspective(s) — use CodeLens to navigate`);
+        } else {
+          vscode.window.showInformationMessage(`No perspectives found for ${info.name}`);
+        }
       }
     })
   );
@@ -109,25 +121,25 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'whizbang.showTestsForSymbol',
-      async (symbol: string, tests: any[]) => {
+      async (symbol: string, tests: TestEntry[]) => {
         if (!tests || tests.length === 0) {
           vscode.window.showInformationMessage(`No tests found for ${symbol}`);
           return;
         }
-        const items = tests.map((t: any) => ({
-          label: `${t.testClass}.${t.testMethod}`,
-          description: `${t.testFile}:${t.testLine}`,
+        const items = tests.map((t: TestEntry) => ({
+          label: `${t.testClass || ''}.${t.testMethod}`,
+          description: t.testFile,
           test: t,
         }));
         if (items.length === 1) {
-          await navigateToLocation(items[0].test.testFile, items[0].test.testLine);
+          await navigateToLocation(items[0].test.testFile, 1);
           return;
         }
         const selected = await vscode.window.showQuickPick(items, {
           placeHolder: `Select test for ${symbol}`,
         });
         if (selected) {
-          await navigateToLocation(selected.test.testFile, selected.test.testLine);
+          await navigateToLocation(selected.test.testFile, 1);
         }
       }
     )
@@ -326,7 +338,7 @@ async function showTestLocations(tests: TestInfo[], kind: string): Promise<void>
   }
 }
 
-async function getMessageAtCursor(): Promise<MessageInfo | undefined> {
+async function getSymbolAtCursor(): Promise<SymbolInfo | undefined> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     return undefined;
@@ -349,7 +361,7 @@ async function getMessageAtCursor(): Promise<MessageInfo | undefined> {
     vscode.window.showInformationMessage('Whizbang: No message found at cursor position');
     return undefined;
   }
-  return info as MessageInfo;
+  return info;
 }
 
 function _showBannerTerminal(context: vscode.ExtensionContext): void {

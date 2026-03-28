@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { WhizbangLspClient } from './lspClient';
 import { WhizbangOutputChannel } from './outputChannel';
+import { SearchResult } from './types';
 
 /**
  * QuickPick item that carries a slug for navigation.
@@ -98,7 +99,7 @@ export class DocSearchProvider {
         return [];
       }
 
-      return results.slice(0, 20).map((result: any) => {
+      return results.slice(0, 20).map((result: SearchResult) => {
         const preview = result.preview
           ? result.preview.length > PREVIEW_MAX_LENGTH
             ? result.preview.substring(0, PREVIEW_MAX_LENGTH) + '...'
@@ -106,8 +107,8 @@ export class DocSearchProvider {
           : '';
 
         return {
-          label: result.title || result.label || '',
-          description: result.category || result.description || '',
+          label: result.title || '',
+          description: result.category || '',
           detail: preview,
           slug: result.slug || '',
         };
