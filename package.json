@@ -50,6 +50,14 @@
       {
         "command": "whizbang.refreshMessageRegistry",
         "title": "Whizbang: Refresh Message Registry"
+      },
+      {
+        "command": "whizbang.searchDocs",
+        "title": "Whizbang: Search Documentation"
+      },
+      {
+        "command": "whizbang.toggleStatusBar",
+        "title": "Whizbang: Toggle Status Bar"
       }
     ],
     "menus": {
@@ -61,6 +69,38 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "whizbang.searchDocs",
+        "key": "ctrl+k d",
+        "mac": "cmd+k d",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "whizbang.goToDispatcher",
+        "key": "ctrl+k ctrl+d",
+        "mac": "cmd+k cmd+d",
+        "when": "editorTextFocus && resourceLangId == csharp"
+      },
+      {
+        "command": "whizbang.goToReceptor",
+        "key": "ctrl+k ctrl+r",
+        "mac": "cmd+k cmd+r",
+        "when": "editorTextFocus && resourceLangId == csharp"
+      },
+      {
+        "command": "whizbang.goToPerspective",
+        "key": "ctrl+k ctrl+p",
+        "mac": "cmd+k cmd+p",
+        "when": "editorTextFocus && resourceLangId == csharp"
+      },
+      {
+        "command": "whizbang.showFlowDiagram",
+        "key": "ctrl+k ctrl+f",
+        "mac": "cmd+k cmd+f",
+        "when": "editorTextFocus && resourceLangId == csharp"
+      }
+    ],
     "configuration": {
       "title": "Whizbang",
       "properties": {
@@ -93,6 +133,31 @@
           "type": "number",
           "default": 24,
           "description": "Hours to cache the type documentation feed before refreshing"
+        },
+        "whizbang.enableDocSearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable documentation search (Cmd+K D)"
+        },
+        "whizbang.enableTestCoverage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show test coverage CodeLens for Whizbang types"
+        },
+        "whizbang.localLibraryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Local path to whizbang library repo for test file navigation"
+        },
+        "whizbang.testRepoUrl": {
+          "type": "string",
+          "default": "https://github.com/whizbang-lib/whizbang/blob/develop/",
+          "description": "Base URL for viewing test files online"
+        },
+        "whizbang.languageServerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Whizbang Language Server executable. Leave empty for auto-detection."
         }
       }
     }
@@ -106,7 +171,8 @@
     "test": "node ./out/test/runTest.js",
     "package": "pnpm run compile && vsce package --no-dependencies",
     "install-local": "pnpm run package && code --install-extension whizbang-0.2.0.vsix",
-    "reinstall": "code --uninstall-extension SoftwareExtravaganza.whizbang && pnpm run install-local"
+    "reinstall": "code --uninstall-extension SoftwareExtravaganza.whizbang && pnpm run install-local",
+    "sync-banner": "cp ../whizbang/logo/whizbang-banner.txt src/assets/whizbang-banner.txt"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -118,7 +184,8 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "glob": "^12.0.0"
+    "glob": "^12.0.0",
+    "vscode-languageclient": "^9.0.1"
   },
   "repository": {
     "type": "git",

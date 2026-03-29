@@ -31,3 +31,46 @@ export interface MessageInfo {
 export interface MessageRegistry {
   messages: MessageInfo[];
 }
+
+// LSP response types (match C# Protocol/CustomParams.cs)
+
+export interface SearchResult {
+  title: string;
+  category: string;
+  slug: string;
+  preview: string;
+  score: number;
+}
+
+export interface SymbolInfo {
+  name: string;
+  kind: string;
+  docsUrl?: string;
+  docsTitle?: string;
+  sourceFile?: string;
+  sourceLine?: number;
+  testCount: number;
+  isCommand: boolean;
+  isEvent: boolean;
+  dispatcherCount: number;
+  receptorCount: number;
+  perspectiveCount: number;
+}
+
+export interface TestEntry {
+  testFile: string;
+  testMethod: string;
+  testClass?: string;
+  linkSource?: string;
+}
+
+export interface StatusInfo {
+  messageCount: number;
+  commandCount: number;
+  eventCount: number;
+  typeDocCount: number;
+  testCount: number;
+  cacheAgeMinutes: number;
+  serverUptime?: string;
+  isDebugPaused: boolean;
+}

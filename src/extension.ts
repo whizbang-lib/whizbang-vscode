@@ -1,47 +1,44 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { RegistryLoader } from './registryLoader';
-import { MessageCodeLensProvider } from './codeLensProvider';
-import { MessageHoverProvider } from './hoverProvider';
-import { TypeDocsProvider } from './typeDocsProvider';
-import { MessageInfo, CodeLocation, TestInfo } from './types';
+import { WhizbangOutputChannel } from './outputChannel';
+import { WhizbangLspClient } from './lspClient';
+import { MessageInfo, CodeLocation, TestInfo, TestEntry, SymbolInfo } from './types';
+import { renderAnsiBanner } from './banner';
+import { DocSearchProvider } from './docSearchProvider';
+import { showFlowDiagramPanel } from './views/flowDiagramPanel';
+import { StatusBarProvider } from './statusBarProvider';
 
-let registryLoader: RegistryLoader;
-let typeDocsProvider: TypeDocsProvider;
+let lspClient: WhizbangLspClient;
 
 export async function activate(context: vscode.ExtensionContext) {
-  console.log('Whizbang extension is now active!');
+  const startTime = Date.now();
 
-  // Initialize registry loader
-  registryLoader = new RegistryLoader();
-  const initialized = await registryLoader.initialize();
+  // 1. Create output channel FIRST
+  const output = WhizbangOutputChannel.getInstance();
+  context.subscriptions.push(output);
 
-  if (!initialized) {
-    return; // Extension stays active but provides no features
+  // 2. Log startup
+  output.log('Whizbang extension activating...');
+
+  // 3. Log settings
+  const config = vscode.workspace.getConfiguration('whizbang');
+  const docsBaseUrl = config.get<string>('docsBaseUrl', 'https://whizbang-lib.github.io');
+  const cacheTtl = config.get<number>('docsCacheTtlHours', 24);
+  output.log(`Settings: docsBaseUrl=${docsBaseUrl}, cacheTtlHours=${cacheTtl}`);
+
+  // Show branded banner in a terminal on startup
+  _showBannerTerminal(context);
+
+  // 4. Initialize LSP client (graceful degradation if server unavailable)
+  lspClient = new WhizbangLspClient(output);
+  context.subscriptions.push(lspClient);
+
+  const serverStarted = await lspClient.start(context);
+  if (!serverStarted) {
+    output.warn('Language server not available. Navigation commands still work, but hover, CodeLens, search, and flow diagrams require the server.');
   }
 
-  // Register CodeLens provider
-  const codeLensProvider = new MessageCodeLensProvider(registryLoader);
-  context.subscriptions.push(
-    vscode.languages.registerCodeLensProvider(
-      { language: 'csharp', scheme: 'file' },
-      codeLensProvider
-    )
-  );
-
-  // Initialize type docs provider (fetches from docs site)
-  typeDocsProvider = new TypeDocsProvider(context);
-  typeDocsProvider.initialize().catch(err => {
-    console.warn('Whizbang: Type docs provider initialization failed:', err);
-  });
-
-  // Register Hover provider
-  const hoverProvider = new MessageHoverProvider(registryLoader, typeDocsProvider);
-  context.subscriptions.push(
-    vscode.languages.registerHoverProvider({ language: 'csharp', scheme: 'file' }, hoverProvider)
-  );
-
-  // Register navigation commands
+  // 5. Register navigation commands (work with or without server)
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'whizbang.navigateToLocation',
@@ -71,27 +68,39 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToDispatcher', async () => {
-      const message = await getMessageAtCursor();
-      if (message) {
-        await showLocations(message.dispatchers, 'Dispatchers');
+      const info = await getSymbolAtCursor();
+      if (info) {
+        if (info.dispatcherCount > 0) {
+          vscode.window.showInformationMessage(`${info.name}: ${info.dispatcherCount} dispatcher(s) — use CodeLens to navigate`);
+        } else {
+          vscode.window.showInformationMessage(`No dispatchers found for ${info.name}`);
+        }
       }
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToReceptor', async () => {
-      const message = await getMessageAtCursor();
-      if (message) {
-        await showLocations(message.receptors, 'Receptors');
+      const info = await getSymbolAtCursor();
+      if (info) {
+        if (info.receptorCount > 0) {
+          vscode.window.showInformationMessage(`${info.name}: ${info.receptorCount} receptor(s) — use CodeLens to navigate`);
+        } else {
+          vscode.window.showInformationMessage(`No receptors found for ${info.name}`);
+        }
       }
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToPerspective', async () => {
-      const message = await getMessageAtCursor();
-      if (message) {
-        await showLocations(message.perspectives, 'Perspectives');
+      const info = await getSymbolAtCursor();
+      if (info) {
+        if (info.perspectiveCount > 0) {
+          vscode.window.showInformationMessage(`${info.name}: ${info.perspectiveCount} perspective(s) — use CodeLens to navigate`);
+        } else {
+          vscode.window.showInformationMessage(`No perspectives found for ${info.name}`);
+        }
       }
     })
   );
@@ -108,14 +117,125 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Add cleanup
-  context.subscriptions.push(registryLoader);
-  context.subscriptions.push(codeLensProvider);
-  context.subscriptions.push(typeDocsProvider);
+  // Register test navigation command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'whizbang.showTestsForSymbol',
+      async (symbol: string, tests: TestEntry[]) => {
+        if (!tests || tests.length === 0) {
+          vscode.window.showInformationMessage(`No tests found for ${symbol}`);
+          return;
+        }
+        const items = tests.map((t: TestEntry) => ({
+          label: `${t.testClass || ''}.${t.testMethod}`,
+          description: t.testFile,
+          test: t,
+        }));
+        if (items.length === 1) {
+          await navigateToLocation(items[0].test.testFile, 1);
+          return;
+        }
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: `Select test for ${symbol}`,
+        });
+        if (selected) {
+          await navigateToLocation(selected.test.testFile, 1);
+        }
+      }
+    )
+  );
+
+  // Register documentation search (delegates to server)
+  const docSearch = new DocSearchProvider(lspClient, output);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.searchDocs', () => docSearch.showSearch())
+  );
+
+  // Register flow diagram command (delegates to server for mermaid generation)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.showFlowDiagram', async () => {
+      if (!lspClient.isRunning) {
+        vscode.window.showWarningMessage('Whizbang: Language server not available. Cannot generate flow diagram.');
+        return;
+      }
+
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Whizbang: No active editor');
+        return;
+      }
+
+      const position = editor.selection.active;
+      const wordRange = editor.document.getWordRangeAtPosition(position);
+      if (!wordRange) {
+        vscode.window.showInformationMessage('Whizbang: No message found at cursor position');
+        return;
+      }
+
+      const word = editor.document.getText(wordRange);
+      const result = await lspClient.generateFlowDiagram(word);
+      if (result?.mermaidCode) {
+        showFlowDiagramPanel(context, word, result.mermaidCode);
+      } else {
+        vscode.window.showInformationMessage('Whizbang: No flow diagram available for this symbol');
+      }
+    })
+  );
+
+  // Register refresh command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.refreshMessageRegistry', async () => {
+      if (!lspClient.isRunning) {
+        vscode.window.showWarningMessage('Whizbang: Language server not available.');
+        return;
+      }
+      // The server handles registry refresh via file watching;
+      // this command can trigger a status check
+      const status = await lspClient.getStatus();
+      if (status) {
+        vscode.window.showInformationMessage(`Whizbang: Registry has ${status.messageCount ?? 0} message(s)`);
+      }
+    })
+  );
+
+  // Register status bar provider (delegates to server)
+  const statusBar = new StatusBarProvider(lspClient, output);
+  context.subscriptions.push(statusBar);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.toggleStatusBar', () => {
+      statusBar.toggle();
+    })
+  );
+
+  // Set initial status bar state
+  if (serverStarted) {
+    statusBar.updateStatus('ready');
+  } else {
+    statusBar.updateStatus('no-server');
+  }
+
+  // Register debug session listeners
+  context.subscriptions.push(
+    vscode.debug.onDidStartDebugSession(() => {
+      lspClient.notifyDebugPaused();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.debug.onDidTerminateDebugSession(() => {
+      lspClient.notifyDebugResumed();
+    })
+  );
+
+  // Log "Ready in Xms"
+  const elapsed = Date.now() - startTime;
+  output.log(`Ready in ${elapsed}ms`);
 }
 
 export function deactivate() {
-  console.log('Whizbang extension deactivated');
+  const output = WhizbangOutputChannel.getInstance();
+  output.log('Whizbang extension deactivated');
 }
 
 async function navigateToLocation(filePath: string, lineNumber: number): Promise<void> {
@@ -218,9 +338,14 @@ async function showTestLocations(tests: TestInfo[], kind: string): Promise<void>
   }
 }
 
-async function getMessageAtCursor(): Promise<MessageInfo | undefined> {
+async function getSymbolAtCursor(): Promise<SymbolInfo | undefined> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
+    return undefined;
+  }
+
+  if (!lspClient.isRunning) {
+    vscode.window.showWarningMessage('Whizbang: Language server not available. Cannot resolve message at cursor.');
     return undefined;
   }
 
@@ -231,5 +356,36 @@ async function getMessageAtCursor(): Promise<MessageInfo | undefined> {
   }
 
   const word = editor.document.getText(wordRange);
-  return registryLoader.findMessage(word);
+  const info = await lspClient.getSymbolInfo(word);
+  if (!info) {
+    vscode.window.showInformationMessage('Whizbang: No message found at cursor position');
+    return undefined;
+  }
+  return info;
+}
+
+function _showBannerTerminal(context: vscode.ExtensionContext): void {
+  const writeEmitter = new vscode.EventEmitter<string>();
+  const closeEmitter = new vscode.EventEmitter<void>();
+
+  const pty: vscode.Pseudoterminal = {
+    onDidWrite: writeEmitter.event,
+    onDidClose: closeEmitter.event,
+    open: () => {
+      const banner = renderAnsiBanner();
+      writeEmitter.fire(banner);
+      writeEmitter.fire('\r\n');
+    },
+    close: () => {
+      // No cleanup needed
+    },
+  };
+
+  const terminal = vscode.window.createTerminal({
+    name: 'Whizbang',
+    pty,
+    isTransient: true,
+  });
+
+  context.subscriptions.push(terminal);
 }
