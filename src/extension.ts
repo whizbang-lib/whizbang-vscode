@@ -12,18 +12,30 @@ import { DocSearchProvider } from './docSearchProvider';
 import { WhizbangLspClient } from './lspClient';
 import { StatusBarProvider } from './statusBarProvider';
 import { MessageInfo, CodeLocation, TestInfo, TestEntry } from './types';
-import { renderAnsiBanner } from './banner';
+import { renderAnsiBanner, getPlainBanner } from './banner';
 import { showFlowDiagramPanel } from './views/flowDiagramPanel';
 
 let registryLoader: RegistryLoader;
 let lspClient: WhizbangLspClient | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
+  try {
   const startTime = Date.now();
 
-  // 1. Create output channel FIRST and show it
+  // 1. Create output channel FIRST, show banner, and show it
   const output = WhizbangOutputChannel.getInstance();
   context.subscriptions.push(output);
+
+  // Show banner in output channel
+  const bannerLines = getPlainBanner();
+  for (const line of bannerLines) {
+    // Replace regular spaces with non-breaking spaces (U+00A0) to prevent
+    // VSCode from rendering indent guides on the banner art
+    const cleaned = line.trimEnd().replace(/ /g, '\u00A0');
+    output.raw(cleaned.trim() === '' ? '' : cleaned);
+  }
+  output.raw('');
+
   output.log('Whizbang extension activating...');
   output.show();
 
@@ -283,6 +295,13 @@ export async function activate(context: vscode.ExtensionContext) {
   // Log "Ready in Xms"
   const elapsed = Date.now() - startTime;
   output.log(`Ready in ${elapsed}ms`);
+  } catch (err) {
+    // Catch activation errors so extension doesn't silently fail
+    const output = WhizbangOutputChannel.getInstance();
+    output.error('Extension activation failed', err instanceof Error ? err : new Error(String(err)));
+    output.show();
+    vscode.window.showErrorMessage(`Whizbang: Activation failed — ${err instanceof Error ? err.message : String(err)}. Check Output panel for details.`);
+  }
 }
 
 export function deactivate() {

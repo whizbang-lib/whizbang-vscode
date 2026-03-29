@@ -15,6 +15,10 @@ export class WhizbangOutputChannel {
     return WhizbangOutputChannel.instance;
   }
 
+  raw(message: string): void {
+    this.channel.appendLine(message);
+  }
+
   log(message: string): void {
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     this.channel.appendLine(`[${timestamp}] ${message}`);
