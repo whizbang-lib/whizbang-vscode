@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { WhizbangOutputChannel } from './outputChannel';
-import { MessageRegistry, MessageInfo, CodeLocation } from './types';
+import { MessageRegistry, MessageInfo, CodeLocation, WhizbangPackageRef } from './types';
 
 export class RegistryLoader {
   private registry: MessageRegistry = { messages: [] };
@@ -92,7 +92,15 @@ export class RegistryLoader {
     // Convert map back to array
     const messages = Array.from(messageMap.values());
 
-    return { messages };
+    // Collect all package references from all registries
+    const allPackages: WhizbangPackageRef[] = [];
+    for (const registry of registries) {
+      if (registry.whizbangPackages) {
+        allPackages.push(...registry.whizbangPackages);
+      }
+    }
+
+    return { messages, whizbangPackages: allPackages };
   }
 
   private mergeLocations(existing: CodeLocation[], incoming: CodeLocation[]): CodeLocation[] {
@@ -148,6 +156,21 @@ export class RegistryLoader {
 
   public findMessage(typeName: string): MessageInfo | undefined {
     return this.registry.messages.find(m => m.type.endsWith(typeName));
+  }
+
+  /**
+   * Returns deduplicated package references from all merged registries.
+   * Each project's registry includes which Whizbang packages it references.
+   */
+  public getPackageRefs(): WhizbangPackageRef[] {
+    const refs = this.registry.whizbangPackages || [];
+    // Deduplicate by id (keep first occurrence)
+    const seen = new Set<string>();
+    return refs.filter(r => {
+      if (seen.has(r.id)) { return false; }
+      seen.add(r.id);
+      return true;
+    });
   }
 
   public dispose(): void {

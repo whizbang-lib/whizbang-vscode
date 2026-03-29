@@ -76,9 +76,11 @@ export async function activate(context: vscode.ExtensionContext) {
   await typeDocIndex.initialize();
 
   // 7. Initialize XmlDocProvider (member-level docs/tests from NuGet XML)
+  // Pass package refs from merged registries for per-project version resolution
+  const allPackageRefs = registryLoader.getPackageRefs();
   const xmlDocProvider = new XmlDocProvider(output);
   try {
-    await xmlDocProvider.initialize();
+    await xmlDocProvider.initialize(allPackageRefs.length > 0 ? allPackageRefs : undefined);
   } catch (err) {
     output.error('XmlDocProvider initialization failed', err instanceof Error ? err : new Error(String(err)));
   }

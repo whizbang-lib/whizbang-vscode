@@ -28,8 +28,14 @@ export interface MessageInfo {
   perspectives: CodeLocation[];
 }
 
+export interface WhizbangPackageRef {
+  id: string;
+  versionPrefix: string;
+}
+
 export interface MessageRegistry {
   messages: MessageInfo[];
+  whizbangPackages?: WhizbangPackageRef[];
 }
 
 // LSP response types (match C# Protocol/CustomParams.cs)

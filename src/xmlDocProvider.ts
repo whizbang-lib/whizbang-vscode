@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { WhizbangOutputChannel } from './outputChannel';
+import { WhizbangPackageRef } from './types';
 
 /**
  * Parsed member info from the Whizbang XML documentation file.
@@ -40,10 +41,15 @@ export class XmlDocProvider implements vscode.Disposable {
    * Find and load Whizbang XML documentation files.
    * Searches NuGet cache and workspace output directories.
    */
-  async initialize(): Promise<void> {
+  /**
+   * Initialize with optional package references from the message registry.
+   * When packageRefs are provided, XML files are loaded for the exact versions
+   * referenced by each project (matched by versionPrefix).
+   */
+  async initialize(packageRefs?: WhizbangPackageRef[]): Promise<void> {
     this.output.log('XmlDocProvider: Searching for Whizbang XML documentation files...');
 
-    const xmlPaths = await this.findXmlFiles();
+    const xmlPaths = await this.findXmlFiles(packageRefs);
 
     this.output.log(`XmlDocProvider: Found ${xmlPaths.length} XML file(s)`);
     for (const p of xmlPaths) {
@@ -117,7 +123,7 @@ export class XmlDocProvider implements vscode.Disposable {
   /**
    * Find Whizbang XML files in NuGet cache and workspace.
    */
-  private async findXmlFiles(): Promise<string[]> {
+  private async findXmlFiles(packageRefs?: WhizbangPackageRef[]): Promise<string[]> {
     const found: string[] = [];
 
     // 1. Search NuGet package cache
@@ -130,35 +136,52 @@ export class XmlDocProvider implements vscode.Disposable {
 
     if (fs.existsSync(nugetBase)) {
       try {
-        // Scan all Whizbang packages in NuGet cache for XML files.
-        // Different projects may use different versions, so we find ALL
-        // versions that have XML and load them (deduplicating by filename).
-        const entries = fs.readdirSync(nugetBase);
-        const whizbangPkgs = entries.filter(e => e.startsWith('softwareextravaganza.whizbang'));
-        const loadedXmlNames = new Set<string>();
+        if (packageRefs && packageRefs.length > 0) {
+          // Use package refs from message-registry.json (per-project version resolution)
+          this.output.log(`XmlDocProvider: Using ${packageRefs.length} package ref(s) from message registry`);
 
-        for (const pkg of whizbangPkgs) {
-          const pkgDir = path.join(nugetBase, pkg);
-          // Sort versions descending so we find the latest XML first
-          const versions = fs.readdirSync(pkgDir).sort().reverse();
+          for (const ref of packageRefs) {
+            const pkgDir = path.join(nugetBase, ref.id.toLowerCase());
+            if (!fs.existsSync(pkgDir)) { continue; }
 
-          for (const ver of versions) {
-            const libDir = path.join(pkgDir, ver, 'lib');
-            if (!fs.existsSync(libDir)) { continue; }
+            // Find version folder matching the prefix (e.g., "0.40.3" matches "0.40.3-alpha.63")
+            const versions = fs.readdirSync(pkgDir);
+            const matching = versions.filter(v => v.startsWith(ref.versionPrefix));
 
-            // Check for XML in any TFM subfolder
-            const beforeCount = found.length;
-            this.findXmlInDir(libDir, found);
+            for (const ver of matching.sort().reverse()) {
+              const libDir = path.join(pkgDir, ver, 'lib');
+              if (!fs.existsSync(libDir)) { continue; }
 
-            if (found.length > beforeCount) {
-              // Track which assembly XMLs we've loaded to avoid duplicates
-              const newFiles = found.slice(beforeCount);
-              for (const f of newFiles) {
-                const xmlName = f.split('/').pop() || '';
-                loadedXmlNames.add(xmlName);
+              const beforeCount = found.length;
+              this.findXmlInDir(libDir, found);
+              if (found.length > beforeCount) {
+                this.output.log(`XmlDocProvider:   ${ref.id}@${ver} → ${found.length - beforeCount} XML file(s)`);
+                break; // Found XML for this version
               }
-              this.output.log(`XmlDocProvider:   ${pkg}@${ver} → ${found.length - beforeCount} XML file(s)`);
-              break; // Got XML for this package, skip older versions
+            }
+          }
+        }
+
+        // Fallback: scan all packages if no refs or refs yielded nothing
+        if (found.length === 0) {
+          this.output.log(`XmlDocProvider: Scanning all NuGet packages as fallback`);
+          const entries = fs.readdirSync(nugetBase);
+          const whizbangPkgs = entries.filter(e => e.startsWith('softwareextravaganza.whizbang'));
+
+          for (const pkg of whizbangPkgs) {
+            const pkgDir = path.join(nugetBase, pkg);
+            const versions = fs.readdirSync(pkgDir).sort().reverse();
+
+            for (const ver of versions) {
+              const libDir = path.join(pkgDir, ver, 'lib');
+              if (!fs.existsSync(libDir)) { continue; }
+
+              const beforeCount = found.length;
+              this.findXmlInDir(libDir, found);
+              if (found.length > beforeCount) {
+                this.output.log(`XmlDocProvider:   ${pkg}@${ver} → ${found.length - beforeCount} XML file(s)`);
+                break;
+              }
             }
           }
         }
