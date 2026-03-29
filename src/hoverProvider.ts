@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { RegistryLoader } from './registryLoader';
 import { TypeDocsProvider } from './typeDocsProvider';
 import { TypeDocIndex } from './typeDocIndex';
+import { XmlDocProvider } from './xmlDocProvider';
 import { WhizbangOutputChannel } from './outputChannel';
 import { CodeLocation, TestInfo } from './types';
 
@@ -11,13 +12,14 @@ export class MessageHoverProvider implements vscode.HoverProvider {
     private output: WhizbangOutputChannel,
     private typeDocsProvider?: TypeDocsProvider,
     private typeDocIndex?: TypeDocIndex,
+    private xmlDocProvider?: XmlDocProvider,
   ) {}
 
-  public provideHover(
+  public async provideHover(
     document: vscode.TextDocument,
     position: vscode.Position,
     token: vscode.CancellationToken
-  ): vscode.Hover | undefined {
+  ): Promise<vscode.Hover | undefined> {
     const wordRange = document.getWordRangeAtPosition(position);
     if (!wordRange) {
       return undefined;
@@ -39,7 +41,23 @@ export class MessageHoverProvider implements vscode.HoverProvider {
         return docIndexHover;
       }
 
-      this.output.log(`HoverProvider: No info for '${word}'`);
+      // Fallback 3: use definition provider to get fully qualified type,
+      // then look up member-level docs/tests from NuGet XML
+      if (this.xmlDocProvider?.isLoaded) {
+        try {
+          const xmlHover = await this.resolveAndProvideXmlDocHover(document, position, word);
+          if (xmlHover) {
+            return xmlHover;
+          }
+        } catch {
+          // Definition provider not available
+        }
+      }
+
+      // Only log for words that look like type names (PascalCase, 4+ chars)
+      if (word.length >= 4 && /^[A-Z]/.test(word)) {
+        this.output.log(`HoverProvider: No info for '${word}'`);
+      }
       return undefined;
     }
 
@@ -151,22 +169,48 @@ export class MessageHoverProvider implements vscode.HoverProvider {
     const markdown = new vscode.MarkdownString();
     markdown.isTrusted = true;
 
-    // Header
-    const title = typeInfo.title || word;
+    const repoUrl = vscode.workspace.getConfiguration('whizbang').get<string>(
+      'libraryRepoUrl', 'https://github.com/whizbang-lib/whizbang/blob/develop/');
+
     markdown.appendMarkdown(`### Whizbang: ${word}\n\n`);
 
     if (typeInfo.title) {
       markdown.appendMarkdown(`**${typeInfo.title}**\n\n`);
     }
 
+    markdown.appendMarkdown(`---\n\n`);
+
     // Documentation link
     if (docsUrl) {
-      markdown.appendMarkdown(`[View Documentation](${docsUrl}) 📚\n\n`);
+      markdown.appendMarkdown(`#### 📚 Documentation\n\n`);
+      markdown.appendMarkdown(`[View Documentation](${docsUrl})\n\n`);
     }
 
-    // Test count
+    // Source file — linked to GitHub
+    if (typeInfo.file) {
+      markdown.appendMarkdown(`#### 📁 Source\n\n`);
+      const line = typeInfo.line || 1;
+      const ghSourceUrl = `${repoUrl}${typeInfo.file}#L${line}`;
+      markdown.appendMarkdown(`[\`${typeInfo.file}:${line}\`](${ghSourceUrl})\n\n`);
+    }
+
+    // Tests - each linked to GitHub
     if (typeInfo.tests && typeInfo.tests.length > 0) {
-      markdown.appendMarkdown(`🧪 ${typeInfo.tests.length} test(s)\n`);
+      markdown.appendMarkdown(`#### 🧪 Tests (${typeInfo.tests.length})\n\n`);
+      for (const testRef of typeInfo.tests) {
+        // Format: "tests/Project.Tests/SomeTests.cs:TestMethodName"
+        const colonIdx = testRef.lastIndexOf(':');
+        if (colonIdx > 0) {
+          const testFile = testRef.substring(0, colonIdx);
+          const testMethod = testRef.substring(colonIdx + 1);
+          const fileName = testFile.split('/').pop() || testFile;
+          const className = fileName.replace('.cs', '');
+          const ghTestUrl = `${repoUrl}${testFile}`;
+          markdown.appendMarkdown(`- [\`${className}.${testMethod}()\`](${ghTestUrl})\n`);
+        } else {
+          markdown.appendMarkdown(`- \`${testRef}\`\n`);
+        }
+      }
     }
 
     return new vscode.Hover(markdown);
@@ -188,18 +232,163 @@ export class MessageHoverProvider implements vscode.HoverProvider {
     const markdown = new vscode.MarkdownString();
     markdown.isTrusted = true;
 
-    // Header
     markdown.appendMarkdown(`### Whizbang: ${word}\n\n`);
+
+    markdown.appendMarkdown(`---\n\n`);
 
     // Documentation link
     if (docUrl) {
-      markdown.appendMarkdown(`[View Documentation](${docUrl}) \uD83D\uDCDA\n\n`);
+      markdown.appendMarkdown(`#### 📚 Documentation\n\n`);
+      markdown.appendMarkdown(`[View Documentation](${docUrl})\n\n`);
     }
 
-    // Source file location
+    // Source file location — linked to GitHub
     if (sourceFile) {
-      const location = sourceLine ? `${sourceFile}:${sourceLine}` : sourceFile;
-      markdown.appendMarkdown(`**Source:** \`${location}\`\n`);
+      markdown.appendMarkdown(`#### 📁 Source\n\n`);
+      const repoUrl = vscode.workspace.getConfiguration('whizbang').get<string>(
+        'libraryRepoUrl', 'https://github.com/whizbang-lib/whizbang/blob/develop/');
+      const line = sourceLine || 1;
+      const ghUrl = `${repoUrl}${sourceFile}#L${line}`;
+      markdown.appendMarkdown(`[\`${sourceFile}:${line}\`](${ghUrl})\n`);
+    }
+
+    return new vscode.Hover(markdown);
+  }
+
+  /**
+   * Uses the C# definition provider to resolve the fully qualified type at
+   * the cursor, then looks up docs/tests from NuGet XML.
+   * Uses executeDefinitionProvider (not executeHoverProvider — that would
+   * cause infinite recursion since WE are a hover provider).
+   */
+  private async resolveAndProvideXmlDocHover(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    word: string,
+  ): Promise<vscode.Hover | undefined> {
+    try {
+      // Use Go to Definition to find where this symbol is defined
+      const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
+        'vscode.executeDefinitionProvider', document.uri, position
+      );
+
+      if (!definitions || definitions.length === 0) {
+        this.output.log(`HoverProvider: No definitions found for '${word}'`);
+        return undefined;
+      }
+
+      // Check all definitions for a Whizbang match
+      const def = definitions[0];
+      const defUri = 'targetUri' in def ? def.targetUri : def.uri;
+      const defPath = defUri.fsPath || defUri.toString();
+
+      this.output.log(`HoverProvider: Definition for '${word}' → ${defPath}`);
+
+      // Extract parent type from the definition file name
+      const fileName = defPath.split('/').pop()?.split('\\').pop() || '';
+      const parentType = fileName.endsWith('.cs') ? fileName.replace('.cs', '') : '';
+
+      if (!parentType) {
+        this.output.log(`HoverProvider: Could not extract parent type from '${fileName}'`);
+        return undefined;
+      }
+
+      // Check if this parent type exists in our XML data (confirms it's a Whizbang type)
+      const hasParent = this.xmlDocProvider!.has(parentType) ||
+        this.xmlDocProvider!.getByQualifiedName(parentType, word).length > 0;
+
+      if (!hasParent) {
+        this.output.log(`HoverProvider: '${parentType}' not found in XML data (not a Whizbang type)`);
+        return undefined;
+      }
+
+      this.output.log(`HoverProvider: Found parent '${parentType}' in XML, looking up '${parentType}.${word}'`);
+
+      // Look up in XML: try qualified (parentType.word) then simple name
+      let members = this.xmlDocProvider!.getByQualifiedName(parentType, word);
+      if (members.length === 0) {
+        members = this.xmlDocProvider!.getByName(word);
+        // Filter to members whose parent type matches the definition file
+        if (parentType && members.length > 1) {
+          const filtered = members.filter(m => m.parentType === parentType);
+          if (filtered.length > 0) {
+            members = filtered;
+          }
+        }
+      }
+
+      if (members.length === 0) {
+        return undefined;
+      }
+
+      return this.buildXmlDocHover(members, `${parentType}.${word}`);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Build a rich hover tooltip from resolved XML member info.
+   */
+  private buildXmlDocHover(members: import('./xmlDocProvider').XmlMemberInfo[], displayName: string): vscode.Hover {
+    const repoUrl = vscode.workspace.getConfiguration('whizbang').get<string>(
+      'libraryRepoUrl', 'https://github.com/whizbang-lib/whizbang/blob/develop/');
+    const docsBaseUrl = vscode.workspace.getConfiguration('whizbang').get<string>(
+      'docsBaseUrl', 'https://whizbang-lib.github.io');
+
+    const markdown = new vscode.MarkdownString();
+    markdown.isTrusted = true;
+
+    const primary = members[0];
+
+    markdown.appendMarkdown(`### Whizbang: ${displayName}\n\n`);
+
+    if (primary.summary) {
+      markdown.appendMarkdown(`${primary.summary}\n\n`);
+    }
+
+    if (members.length > 1) {
+      markdown.appendMarkdown(`*${members.length} overloads*\n\n`);
+    }
+
+    markdown.appendMarkdown(`---\n\n`);
+
+    // Documentation links (deduplicated across overloads)
+    const allDocs = new Set<string>();
+    for (const m of members) {
+      for (const doc of m.docs) { allDocs.add(doc); }
+    }
+
+    if (allDocs.size > 0) {
+      markdown.appendMarkdown(`#### 📚 Documentation\n\n`);
+      for (const doc of allDocs) {
+        const url = `${docsBaseUrl}/docs/v1.0.0/${doc}`;
+        const displayLabel = doc.split('/').pop()?.replace(/-/g, ' ') || doc;
+        markdown.appendMarkdown(`[${displayLabel}](${url})\n\n`);
+      }
+    }
+
+    // Tests (deduplicated across overloads)
+    const allTests = new Set<string>();
+    for (const m of members) {
+      for (const t of m.tests) { allTests.add(t); }
+    }
+
+    if (allTests.size > 0) {
+      markdown.appendMarkdown(`#### 🧪 Tests (${allTests.size})\n\n`);
+      for (const testRef of allTests) {
+        const colonIdx = testRef.lastIndexOf(':');
+        if (colonIdx > 0) {
+          const testFile = testRef.substring(0, colonIdx);
+          const testMethod = testRef.substring(colonIdx + 1);
+          const fileName = testFile.split('/').pop() || testFile;
+          const className = fileName.replace('.cs', '');
+          const ghTestUrl = `${repoUrl}${testFile}`;
+          markdown.appendMarkdown(`- [\`${className}.${testMethod}()\`](${ghTestUrl})\n`);
+        } else {
+          markdown.appendMarkdown(`- \`${testRef}\`\n`);
+        }
+      }
     }
 
     return new vscode.Hover(markdown);

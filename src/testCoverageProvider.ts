@@ -140,8 +140,8 @@ export async function showTestsForSymbol(symbol: string, tests: TestEntry[]): Pr
 
   const config = vscode.workspace.getConfiguration('whizbang');
   const localLibraryPath = config.get<string>('localLibraryPath', '');
-  const testRepoUrl = config.get<string>(
-    'testRepoUrl',
+  const libraryRepoUrl = config.get<string>(
+    'libraryRepoUrl',
     'https://github.com/whizbang-lib/whizbang/blob/develop/',
   );
 
@@ -190,6 +190,6 @@ export async function showTestsForSymbol(symbol: string, tests: TestEntry[]): Pr
   }
 
   // Fall back to opening GitHub URL
-  const url = `${testRepoUrl}${test.testFile}`;
+  const url = `${libraryRepoUrl}${test.testFile}`;
   await vscode.env.openExternal(vscode.Uri.parse(url));
 }

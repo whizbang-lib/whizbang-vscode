@@ -149,10 +149,10 @@
           "default": "",
           "description": "Local path to whizbang library repo for test file navigation"
         },
-        "whizbang.testRepoUrl": {
+        "whizbang.libraryRepoUrl": {
           "type": "string",
           "default": "https://github.com/whizbang-lib/whizbang/blob/develop/",
-          "description": "Base URL for viewing test files online"
+          "description": "Base URL for viewing library source and test files on GitHub"
         },
         "whizbang.languageServerPath": {
           "type": "string",

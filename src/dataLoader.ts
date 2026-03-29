@@ -193,22 +193,30 @@ export class DataLoader implements vscode.Disposable {
 
   private loadBundled(descriptor: DataSourceDescriptor): unknown {
     try {
-      const bundledPath = path.join(__dirname, '..', 'src', 'data', `${descriptor.key}.json`);
-      // In compiled output, __dirname is 'out/', so try both locations
-      const candidates = [
-        bundledPath,
-        path.join(__dirname, 'data', `${descriptor.key}.json`),
-      ];
-
-      for (const candidate of candidates) {
-        if (fs.existsSync(candidate)) {
-          const content = fs.readFileSync(candidate, 'utf-8');
-          const parsed = JSON.parse(content);
-          this.data.set(descriptor.key, parsed);
-          this.onDataLoadedEmitter.fire(descriptor.key);
-          this.output.log(`DataLoader: Loaded bundled '${descriptor.key}'`);
-          return parsed;
+      // Try inline require first (works with esbuild bundling)
+      let parsed: unknown;
+      if (descriptor.key === 'keyword-synonyms') {
+        parsed = require('./data/keyword-synonyms.json');
+      } else {
+        // Fallback to filesystem for unknown bundled keys
+        const candidates = [
+          path.join(__dirname, '..', 'src', 'data', `${descriptor.key}.json`),
+          path.join(__dirname, 'data', `${descriptor.key}.json`),
+        ];
+        for (const candidate of candidates) {
+          if (fs.existsSync(candidate)) {
+            const content = fs.readFileSync(candidate, 'utf-8');
+            parsed = JSON.parse(content);
+            break;
+          }
         }
+      }
+
+      if (parsed) {
+        this.data.set(descriptor.key, parsed);
+        this.onDataLoadedEmitter.fire(descriptor.key);
+        this.output.log(`DataLoader: Loaded bundled '${descriptor.key}'`);
+        return parsed;
       }
 
       this.output.warn(`DataLoader: Bundled file not found for '${descriptor.key}'`);

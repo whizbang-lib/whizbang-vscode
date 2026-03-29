@@ -62,7 +62,7 @@ export class WhizbangLspClient implements vscode.Disposable {
       }
 
       if (!projectPath) {
-        this.output.warn('Language server project not found. Features like hover and CodeLens require the Whizbang Language Server.');
+        this.output.warn('Language server not found — running in standalone mode. Flow diagrams and debug keepalive require the server.');
         return false;
       }
 
@@ -82,7 +82,7 @@ export class WhizbangLspClient implements vscode.Disposable {
         cacheTtlHours: config.get<number>('docsCacheTtlHours', 24),
         storageUri: context.storageUri?.fsPath || '',
         localLibraryPath: config.get<string>('localLibraryPath', ''),
-        testRepoUrl: config.get<string>('testRepoUrl', 'https://github.com/whizbang-lib/whizbang/blob/develop/'),
+        libraryRepoUrl: config.get<string>('libraryRepoUrl', 'https://github.com/whizbang-lib/whizbang/blob/develop/'),
       },
       synchronize: {
         fileEvents: vscode.workspace.createFileSystemWatcher('**/.whizbang/message-registry.json')

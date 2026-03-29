@@ -8,6 +8,7 @@ import { MessageHoverProvider } from './hoverProvider';
 import { TypeDocsProvider } from './typeDocsProvider';
 import { TypeDocIndex } from './typeDocIndex';
 import { TestCoverageProvider, showTestsForSymbol } from './testCoverageProvider';
+import { XmlDocProvider } from './xmlDocProvider';
 import { DocSearchProvider } from './docSearchProvider';
 import { WhizbangLspClient } from './lspClient';
 import { StatusBarProvider } from './statusBarProvider';
@@ -74,8 +75,17 @@ export async function activate(context: vscode.ExtensionContext) {
   const typeDocIndex = new TypeDocIndex(dataLoader, output);
   await typeDocIndex.initialize();
 
-  // 7. Register HoverProvider (from local registry + type docs)
-  const hoverProvider = new MessageHoverProvider(registryLoader, output, typeDocsProvider, typeDocIndex);
+  // 7. Initialize XmlDocProvider (member-level docs/tests from NuGet XML)
+  const xmlDocProvider = new XmlDocProvider(output);
+  try {
+    await xmlDocProvider.initialize();
+  } catch (err) {
+    output.error('XmlDocProvider initialization failed', err instanceof Error ? err : new Error(String(err)));
+  }
+  context.subscriptions.push(xmlDocProvider);
+
+  // 8. Register HoverProvider (from local registry + type docs + XML docs)
+  const hoverProvider = new MessageHoverProvider(registryLoader, output, typeDocsProvider, typeDocIndex, xmlDocProvider);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(
       { language: 'csharp', scheme: 'file' },
