@@ -1,26 +1,33 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { WhizbangOutputChannel } from './outputChannel';
-import { WhizbangLspClient } from './lspClient';
-import { MessageInfo, CodeLocation, TestInfo, TestEntry, SymbolInfo } from './types';
-import { renderAnsiBanner } from './banner';
+import { RegistryLoader } from './registryLoader';
+import { DataLoader } from './dataLoader';
+import { MessageCodeLensProvider } from './codeLensProvider';
+import { MessageHoverProvider } from './hoverProvider';
+import { TypeDocsProvider } from './typeDocsProvider';
+import { TypeDocIndex } from './typeDocIndex';
+import { TestCoverageProvider, showTestsForSymbol } from './testCoverageProvider';
 import { DocSearchProvider } from './docSearchProvider';
-import { showFlowDiagramPanel } from './views/flowDiagramPanel';
+import { WhizbangLspClient } from './lspClient';
 import { StatusBarProvider } from './statusBarProvider';
+import { MessageInfo, CodeLocation, TestInfo, TestEntry } from './types';
+import { renderAnsiBanner } from './banner';
+import { showFlowDiagramPanel } from './views/flowDiagramPanel';
 
-let lspClient: WhizbangLspClient;
+let registryLoader: RegistryLoader;
+let lspClient: WhizbangLspClient | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
   const startTime = Date.now();
 
-  // 1. Create output channel FIRST
+  // 1. Create output channel FIRST and show it
   const output = WhizbangOutputChannel.getInstance();
   context.subscriptions.push(output);
-
-  // 2. Log startup
   output.log('Whizbang extension activating...');
+  output.show();
 
-  // 3. Log settings
+  // 2. Log settings
   const config = vscode.workspace.getConfiguration('whizbang');
   const docsBaseUrl = config.get<string>('docsBaseUrl', 'https://whizbang-lib.github.io');
   const cacheTtl = config.get<number>('docsCacheTtlHours', 24);
@@ -29,16 +36,57 @@ export async function activate(context: vscode.ExtensionContext) {
   // Show branded banner in a terminal on startup
   _showBannerTerminal(context);
 
-  // 4. Initialize LSP client (graceful degradation if server unavailable)
-  lspClient = new WhizbangLspClient(output);
-  context.subscriptions.push(lspClient);
+  // 3. Initialize RegistryLoader (loads .whizbang/message-registry.json)
+  registryLoader = new RegistryLoader(output);
+  await registryLoader.initialize();
 
-  const serverStarted = await lspClient.start(context);
-  if (!serverStarted) {
-    output.warn('Language server not available. Navigation commands still work, but hover, CodeLens, search, and flow diagrams require the server.');
-  }
+  // 4. Initialize DataLoader (fetches vscode-feed.json, code-docs-map.json)
+  const dataLoader = new DataLoader(context, output);
+  context.subscriptions.push(dataLoader);
+  await dataLoader.preload();
 
-  // 5. Register navigation commands (work with or without server)
+  // 5. Register CodeLensProvider (from local registry)
+  const codeLensProvider = new MessageCodeLensProvider(registryLoader, output);
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { language: 'csharp', scheme: 'file' },
+      codeLensProvider,
+    )
+  );
+
+  // 6. Initialize TypeDocsProvider + TypeDocIndex
+  const typeDocsProvider = new TypeDocsProvider(context, dataLoader, output);
+  await typeDocsProvider.initialize();
+  context.subscriptions.push(typeDocsProvider);
+
+  const typeDocIndex = new TypeDocIndex(dataLoader, output);
+  await typeDocIndex.initialize();
+
+  // 7. Register HoverProvider (from local registry + type docs)
+  const hoverProvider = new MessageHoverProvider(registryLoader, output, typeDocsProvider, typeDocIndex);
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider(
+      { language: 'csharp', scheme: 'file' },
+      hoverProvider,
+    )
+  );
+
+  // 8. Register TestCoverageProvider (from local data)
+  const testCoverageProvider = new TestCoverageProvider(dataLoader, registryLoader, output);
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { language: 'csharp', scheme: 'file' },
+      testCoverageProvider,
+    )
+  );
+
+  // 9. Register DocSearchProvider (local MiniSearch)
+  const docSearch = new DocSearchProvider(dataLoader, output);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.searchDocs', () => docSearch.showSearch())
+  );
+
+  // 10. Register all navigation commands
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'whizbang.navigateToLocation',
@@ -68,12 +116,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToDispatcher', async () => {
-      const info = await getSymbolAtCursor();
-      if (info) {
-        if (info.dispatcherCount > 0) {
-          vscode.window.showInformationMessage(`${info.name}: ${info.dispatcherCount} dispatcher(s) — use CodeLens to navigate`);
+      const message = getMessageAtCursor();
+      if (message) {
+        if (message.dispatchers.length > 0) {
+          await showLocations(message.dispatchers, 'Dispatchers');
         } else {
-          vscode.window.showInformationMessage(`No dispatchers found for ${info.name}`);
+          vscode.window.showInformationMessage(`No dispatchers found for ${message.type}`);
         }
       }
     })
@@ -81,12 +129,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToReceptor', async () => {
-      const info = await getSymbolAtCursor();
-      if (info) {
-        if (info.receptorCount > 0) {
-          vscode.window.showInformationMessage(`${info.name}: ${info.receptorCount} receptor(s) — use CodeLens to navigate`);
+      const message = getMessageAtCursor();
+      if (message) {
+        if (message.receptors.length > 0) {
+          await showLocations(message.receptors, 'Receptors');
         } else {
-          vscode.window.showInformationMessage(`No receptors found for ${info.name}`);
+          vscode.window.showInformationMessage(`No receptors found for ${message.type}`);
         }
       }
     })
@@ -94,12 +142,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.goToPerspective', async () => {
-      const info = await getSymbolAtCursor();
-      if (info) {
-        if (info.perspectiveCount > 0) {
-          vscode.window.showInformationMessage(`${info.name}: ${info.perspectiveCount} perspective(s) — use CodeLens to navigate`);
+      const message = getMessageAtCursor();
+      if (message) {
+        if (message.perspectives.length > 0) {
+          await showLocations(message.perspectives, 'Perspectives');
         } else {
-          vscode.window.showInformationMessage(`No perspectives found for ${info.name}`);
+          vscode.window.showInformationMessage(`No perspectives found for ${message.type}`);
         }
       }
     })
@@ -145,17 +193,67 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // Register documentation search (delegates to server)
-  const docSearch = new DocSearchProvider(lspClient, output);
+  // Register refresh command (works with local registry)
   context.subscriptions.push(
-    vscode.commands.registerCommand('whizbang.searchDocs', () => docSearch.showSearch())
+    vscode.commands.registerCommand('whizbang.refreshMessageRegistry', async () => {
+      await registryLoader.initialize();
+      const count = registryLoader.getRegistry().messages.length;
+      vscode.window.showInformationMessage(`Whizbang: Registry refreshed — ${count} message(s)`);
+    })
   );
 
-  // Register flow diagram command (delegates to server for mermaid generation)
+  // 11. Try to start LSP client (non-blocking, graceful failure)
+  const lspInstance = new WhizbangLspClient(output);
+  context.subscriptions.push(lspInstance);
+
+  const serverStarted = await lspInstance.start(context);
+  if (serverStarted) {
+    lspClient = lspInstance;
+    output.log('Language server connected — enhanced features available');
+  } else {
+    lspClient = null;
+    output.log('Running in standalone mode — all core features active');
+  }
+
+  // 12. Register StatusBarProvider (uses registry data, optionally enhanced by LSP)
+  const statusBar = new StatusBarProvider(registryLoader, lspClient, output);
+  context.subscriptions.push(statusBar);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('whizbang.toggleStatusBar', () => {
+      statusBar.toggle();
+    })
+  );
+
+  // Set initial status bar state
+  const messageCount = registryLoader.getRegistry().messages.length;
+  if (messageCount > 0) {
+    statusBar.updateStatus('ready');
+  } else {
+    statusBar.updateStatus('no-registry');
+  }
+
+  // 13. Register debug session listeners only if LSP is available
+  if (lspClient) {
+    const client = lspClient;
+    context.subscriptions.push(
+      vscode.debug.onDidStartDebugSession(() => {
+        client.notifyDebugPaused();
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.debug.onDidTerminateDebugSession(() => {
+        client.notifyDebugResumed();
+      })
+    );
+  }
+
+  // 14. Flow diagram command: try LSP first, show "server required" if not available
   context.subscriptions.push(
     vscode.commands.registerCommand('whizbang.showFlowDiagram', async () => {
-      if (!lspClient.isRunning) {
-        vscode.window.showWarningMessage('Whizbang: Language server not available. Cannot generate flow diagram.');
+      if (!lspClient || !lspClient.isRunning) {
+        vscode.window.showWarningMessage('Whizbang: Flow diagrams require the language server. Install and start the Whizbang Language Server for this feature.');
         return;
       }
 
@@ -182,52 +280,6 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Register refresh command
-  context.subscriptions.push(
-    vscode.commands.registerCommand('whizbang.refreshMessageRegistry', async () => {
-      if (!lspClient.isRunning) {
-        vscode.window.showWarningMessage('Whizbang: Language server not available.');
-        return;
-      }
-      // The server handles registry refresh via file watching;
-      // this command can trigger a status check
-      const status = await lspClient.getStatus();
-      if (status) {
-        vscode.window.showInformationMessage(`Whizbang: Registry has ${status.messageCount ?? 0} message(s)`);
-      }
-    })
-  );
-
-  // Register status bar provider (delegates to server)
-  const statusBar = new StatusBarProvider(lspClient, output);
-  context.subscriptions.push(statusBar);
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('whizbang.toggleStatusBar', () => {
-      statusBar.toggle();
-    })
-  );
-
-  // Set initial status bar state
-  if (serverStarted) {
-    statusBar.updateStatus('ready');
-  } else {
-    statusBar.updateStatus('no-server');
-  }
-
-  // Register debug session listeners
-  context.subscriptions.push(
-    vscode.debug.onDidStartDebugSession(() => {
-      lspClient.notifyDebugPaused();
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.debug.onDidTerminateDebugSession(() => {
-      lspClient.notifyDebugResumed();
-    })
-  );
-
   // Log "Ready in Xms"
   const elapsed = Date.now() - startTime;
   output.log(`Ready in ${elapsed}ms`);
@@ -236,6 +288,30 @@ export async function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
   const output = WhizbangOutputChannel.getInstance();
   output.log('Whizbang extension deactivated');
+}
+
+/**
+ * Get the message at the current cursor position using the LOCAL registryLoader.
+ */
+function getMessageAtCursor(): MessageInfo | undefined {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return undefined;
+  }
+
+  const position = editor.selection.active;
+  const wordRange = editor.document.getWordRangeAtPosition(position);
+  if (!wordRange) {
+    return undefined;
+  }
+
+  const word = editor.document.getText(wordRange);
+  const message = registryLoader.findMessage(word);
+  if (!message) {
+    vscode.window.showInformationMessage('Whizbang: No message found at cursor position');
+    return undefined;
+  }
+  return message;
 }
 
 async function navigateToLocation(filePath: string, lineNumber: number): Promise<void> {
@@ -336,32 +412,6 @@ async function showTestLocations(tests: TestInfo[], kind: string): Promise<void>
   if (selected) {
     await navigateToLocation(selected.test.testFile, selected.test.testLine);
   }
-}
-
-async function getSymbolAtCursor(): Promise<SymbolInfo | undefined> {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor) {
-    return undefined;
-  }
-
-  if (!lspClient.isRunning) {
-    vscode.window.showWarningMessage('Whizbang: Language server not available. Cannot resolve message at cursor.');
-    return undefined;
-  }
-
-  const position = editor.selection.active;
-  const wordRange = editor.document.getWordRangeAtPosition(position);
-  if (!wordRange) {
-    return undefined;
-  }
-
-  const word = editor.document.getText(wordRange);
-  const info = await lspClient.getSymbolInfo(word);
-  if (!info) {
-    vscode.window.showInformationMessage('Whizbang: No message found at cursor position');
-    return undefined;
-  }
-  return info;
 }
 
 function _showBannerTerminal(context: vscode.ExtensionContext): void {

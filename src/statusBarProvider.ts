@@ -1,13 +1,17 @@
 import * as vscode from 'vscode';
+import { RegistryLoader } from './registryLoader';
 import { WhizbangLspClient } from './lspClient';
 import { WhizbangOutputChannel } from './outputChannel';
 
 type StatusState = 'loading' | 'ready' | 'no-registry' | 'no-server' | 'error';
 
 /**
- * Provides a status bar item showing Whizbang server status.
+ * Provides a status bar item showing Whizbang status.
  * Click toggles between collapsed and expanded views.
  * Expanded view auto-collapses after 10 seconds.
+ *
+ * Uses RegistryLoader for message counts (always available).
+ * Optionally enhanced by LSP client when the server is running.
  */
 export class StatusBarProvider implements vscode.Disposable {
   private statusBarItem: vscode.StatusBarItem;
@@ -18,7 +22,8 @@ export class StatusBarProvider implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
 
   constructor(
-    private lspClient: WhizbangLspClient,
+    private registryLoader: RegistryLoader,
+    private lspClient: WhizbangLspClient | null,
     private output: WhizbangOutputChannel,
   ) {
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -26,17 +31,34 @@ export class StatusBarProvider implements vscode.Disposable {
     this.updateStatus('loading');
     this.statusBarItem.show();
 
-    // Listen for registry changes from the server
+    // Use registry data for message counts
+    this.lastMessageCount = registryLoader.getRegistry().messages.length;
+
+    // Listen for registry changes (always works, no server needed)
     this.disposables.push(
-      this.lspClient.onRegistryChanged((params) => {
-        this.lastMessageCount = params.messageCount;
-        if (params.messageCount > 0) {
+      this.registryLoader.onRegistryChanged((registry) => {
+        this.lastMessageCount = registry.messages.length;
+        if (registry.messages.length > 0) {
           this.updateStatus('ready');
         } else {
           this.updateStatus('no-registry');
         }
       }),
     );
+
+    // Also listen for server registry changes if LSP is available
+    if (this.lspClient) {
+      this.disposables.push(
+        this.lspClient.onRegistryChanged((params) => {
+          this.lastMessageCount = params.messageCount;
+          if (params.messageCount > 0) {
+            this.updateStatus('ready');
+          } else {
+            this.updateStatus('no-registry');
+          }
+        }),
+      );
+    }
   }
 
   /**
@@ -66,13 +88,20 @@ export class StatusBarProvider implements vscode.Disposable {
 
     // Auto-collapse after 10 seconds
     if (this.expanded) {
-      // Fetch fresh status from server when expanding
-      this.lspClient.getStatus().then(status => {
-        if (status) {
-          this.lastMessageCount = status.messageCount ?? this.lastMessageCount;
-          this.render();
-        }
-      });
+      // Refresh message count from registry
+      this.lastMessageCount = this.registryLoader.getRegistry().messages.length;
+
+      // If server is available, fetch fresh status
+      if (this.lspClient?.isRunning) {
+        this.lspClient.getStatus().then(status => {
+          if (status) {
+            this.lastMessageCount = status.messageCount ?? this.lastMessageCount;
+            this.render();
+          }
+        });
+      }
+
+      this.render();
 
       this.collapseTimer = setTimeout(() => {
         this.expanded = false;
@@ -128,13 +157,18 @@ export class StatusBarProvider implements vscode.Disposable {
       md.appendMarkdown('No message registry found. Build your project to generate one.\n\n');
     } else if (this.state === 'no-server') {
       md.appendMarkdown('Language server not available.\n\n');
-      md.appendMarkdown('Navigation commands still work, but hover, CodeLens,\n');
-      md.appendMarkdown('search, and flow diagrams require the server.\n\n');
+      md.appendMarkdown('All core features (CodeLens, Hover, Search, Navigation) are active.\n');
+      md.appendMarkdown('Flow diagrams require the server.\n\n');
     } else if (this.state === 'error') {
       md.appendMarkdown('Error communicating with language server.\n\n');
     } else {
       md.appendMarkdown(`Messages: ${this.lastMessageCount}\n\n`);
-      md.appendMarkdown(`Server: connected\n\n`);
+
+      if (this.lspClient?.isRunning) {
+        md.appendMarkdown(`Server: connected\n\n`);
+      } else {
+        md.appendMarkdown(`Mode: standalone\n\n`);
+      }
 
       // Cache info
       const config = vscode.workspace.getConfiguration('whizbang');
