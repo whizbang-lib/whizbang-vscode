@@ -5,6 +5,7 @@ All notable changes to the Whizbang VSCode extension will be documented in this 
 ## [Unreleased]
 
 ### Changed
+- Self-heal: automatically delete an orphaned legacy `.whizbang/message-registry.json` once a project has migrated to `.whizbang/cache/` (opt out with `whizbang.cleanupLegacyRegistry: false`).
 - Message registry discovery now reads `.whizbang/cache/message-registry.json` (the new
   git-ignored location emitted by newer Whizbang generators) and falls back to the legacy
   `.whizbang/message-registry.json` for projects on older generators. Deduped by project directory
