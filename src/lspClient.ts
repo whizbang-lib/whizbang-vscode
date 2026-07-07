@@ -85,7 +85,8 @@ export class WhizbangLspClient implements vscode.Disposable {
         libraryRepoUrl: config.get<string>('libraryRepoUrl', 'https://github.com/whizbang-lib/whizbang/blob/develop/'),
       },
       synchronize: {
-        fileEvents: vscode.workspace.createFileSystemWatcher('**/.whizbang/message-registry.json')
+        // Watch both the new .whizbang/cache/ location and the legacy .whizbang/ location.
+        fileEvents: vscode.workspace.createFileSystemWatcher('**/.whizbang/{cache/,}message-registry.json')
       }
     };
 
