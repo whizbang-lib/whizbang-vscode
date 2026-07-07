@@ -14,6 +14,7 @@ export class RegistryLoader {
   constructor(private output: WhizbangOutputChannel) {}
 
   public async initialize(): Promise<boolean> {
+    await this.cleanupOrphanedLegacyRegistries();
     this.registryPaths = await this.findAllRegistryFiles();
 
     if (this.registryPaths.length === 0) {
@@ -30,23 +31,51 @@ export class RegistryLoader {
     return true;
   }
 
+  // The project directory that owns a registry file: the path up to the `.whizbang` segment. This
+  // normalizes the two nesting depths (`.whizbang/cache/…` vs legacy `.whizbang/…`) to the same key.
+  private projectDirOf(fsPath: string): string {
+    const marker = `${path.sep}.whizbang${path.sep}`;
+    const idx = fsPath.lastIndexOf(marker);
+    return idx >= 0 ? fsPath.slice(0, idx) : path.dirname(fsPath);
+  }
+
+  /**
+   * Self-heal: when a project has migrated to the new `.whizbang/cache/message-registry.json`, an
+   * orphaned legacy `.whizbang/message-registry.json` may be left behind at the folder root. It is a
+   * regenerable artifact (never source of truth), so delete it once a cache/ copy exists for the same
+   * project — otherwise an old registry can shadow the current one. Opt out with
+   * `whizbang.cleanupLegacyRegistry: false`.
+   */
+  private async cleanupOrphanedLegacyRegistries(): Promise<void> {
+    if (!vscode.workspace.getConfiguration('whizbang').get<boolean>('cleanupLegacyRegistry', true)) {
+      return;
+    }
+    const generated = await vscode.workspace.findFiles('**/.whizbang/cache/message-registry.json');
+    const legacy = await vscode.workspace.findFiles('**/.whizbang/message-registry.json');
+    const migrated = new Set(generated.map(uri => this.projectDirOf(uri.fsPath)));
+    for (const uri of legacy) {
+      if (migrated.has(this.projectDirOf(uri.fsPath))) {
+        try {
+          fs.unlinkSync(uri.fsPath);
+          this.output.log(`Removed orphaned legacy registry (superseded by .whizbang/cache/): ${uri.fsPath}`);
+        } catch (error) {
+          this.output.warn(`Could not remove orphaned legacy registry ${uri.fsPath}: ${error}`);
+        }
+      }
+    }
+  }
+
   private async findAllRegistryFiles(): Promise<string[]> {
     // The message registry moved from .whizbang/ into the git-ignored .whizbang/cache/ subfolder.
     // Prefer the new location; fall back to the legacy .whizbang/ path for projects still on an
-    // older Whizbang generator. Dedupe by project directory (the path up to the .whizbang segment,
-    // which normalizes the different nesting depths) so a stale legacy copy left behind after an
-    // upgrade doesn't shadow or duplicate the current one.
+    // older Whizbang generator. Dedupe by project directory so a stale legacy copy left behind after
+    // an upgrade doesn't shadow or duplicate the current one.
     const generated = await vscode.workspace.findFiles('**/.whizbang/cache/message-registry.json');
     const legacy = await vscode.workspace.findFiles('**/.whizbang/message-registry.json');
-    const projectDir = (fsPath: string): string => {
-      const marker = `${path.sep}.whizbang${path.sep}`;
-      const idx = fsPath.lastIndexOf(marker);
-      return idx >= 0 ? fsPath.slice(0, idx) : path.dirname(fsPath);
-    };
-    const covered = new Set(generated.map(uri => projectDir(uri.fsPath)));
+    const covered = new Set(generated.map(uri => this.projectDirOf(uri.fsPath)));
     const result = generated.map(uri => uri.fsPath);
     for (const uri of legacy) {
-      if (!covered.has(projectDir(uri.fsPath))) {
+      if (!covered.has(this.projectDirOf(uri.fsPath))) {
         result.push(uri.fsPath);
       }
     }
