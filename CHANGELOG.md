@@ -2,6 +2,14 @@
 
 All notable changes to the Whizbang VSCode extension will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Message registry discovery now reads `.whizbang-generated/message-registry.json` (the new
+  git-ignored location emitted by newer Whizbang generators) and falls back to the legacy
+  `.whizbang/message-registry.json` for projects on older generators. Deduped by project directory
+  so a stale legacy copy can't shadow the current one; the file watcher covers both folders.
+
 ## [0.1.0] - Initial Release
 
 ### Added
