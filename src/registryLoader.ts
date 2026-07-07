@@ -31,9 +31,21 @@ export class RegistryLoader {
   }
 
   private async findAllRegistryFiles(): Promise<string[]> {
-    const patterns = ['**/.whizbang/message-registry.json'];
-    const files = await vscode.workspace.findFiles(patterns[0]);
-    return files.map(uri => uri.fsPath);
+    // The message registry moved from .whizbang/ to the git-ignored .whizbang-generated/ folder.
+    // Prefer the new location; fall back to the legacy .whizbang/ location for projects still on an
+    // older Whizbang generator. Dedupe by project directory so a stale legacy copy left behind after
+    // an upgrade doesn't shadow or duplicate the current generated one.
+    const generated = await vscode.workspace.findFiles('**/.whizbang-generated/message-registry.json');
+    const legacy = await vscode.workspace.findFiles('**/.whizbang/message-registry.json');
+    const projectDir = (fsPath: string): string => path.dirname(path.dirname(fsPath));
+    const covered = new Set(generated.map(uri => projectDir(uri.fsPath)));
+    const result = generated.map(uri => uri.fsPath);
+    for (const uri of legacy) {
+      if (!covered.has(projectDir(uri.fsPath))) {
+        result.push(uri.fsPath);
+      }
+    }
+    return result;
   }
 
   private loadAndMergeRegistries(): void {
