@@ -49,7 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Show branded banner in a terminal on startup
   _showBannerTerminal(context);
 
-  // 3. Initialize RegistryLoader (loads .whizbang-generated/message-registry.json, legacy .whizbang/ fallback)
+  // 3. Initialize RegistryLoader (loads .whizbang/cache/message-registry.json, legacy .whizbang/ fallback)
   registryLoader = new RegistryLoader(output);
   await registryLoader.initialize();
 

@@ -31,13 +31,18 @@ export class RegistryLoader {
   }
 
   private async findAllRegistryFiles(): Promise<string[]> {
-    // The message registry moved from .whizbang/ to the git-ignored .whizbang-generated/ folder.
-    // Prefer the new location; fall back to the legacy .whizbang/ location for projects still on an
-    // older Whizbang generator. Dedupe by project directory so a stale legacy copy left behind after
-    // an upgrade doesn't shadow or duplicate the current generated one.
-    const generated = await vscode.workspace.findFiles('**/.whizbang-generated/message-registry.json');
+    // The message registry moved from .whizbang/ into the git-ignored .whizbang/cache/ subfolder.
+    // Prefer the new location; fall back to the legacy .whizbang/ path for projects still on an
+    // older Whizbang generator. Dedupe by project directory (the path up to the .whizbang segment,
+    // which normalizes the different nesting depths) so a stale legacy copy left behind after an
+    // upgrade doesn't shadow or duplicate the current one.
+    const generated = await vscode.workspace.findFiles('**/.whizbang/cache/message-registry.json');
     const legacy = await vscode.workspace.findFiles('**/.whizbang/message-registry.json');
-    const projectDir = (fsPath: string): string => path.dirname(path.dirname(fsPath));
+    const projectDir = (fsPath: string): string => {
+      const marker = `${path.sep}.whizbang${path.sep}`;
+      const idx = fsPath.lastIndexOf(marker);
+      return idx >= 0 ? fsPath.slice(0, idx) : path.dirname(fsPath);
+    };
     const covered = new Set(generated.map(uri => projectDir(uri.fsPath)));
     const result = generated.map(uri => uri.fsPath);
     for (const uri of legacy) {

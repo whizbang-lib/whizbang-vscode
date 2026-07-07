@@ -116,8 +116,8 @@
         },
         "whizbang.messageRegistryPath": {
           "type": "string",
-          "default": ".whizbang-generated/message-registry.json",
-          "description": "Path to the message registry JSON file (relative to workspace root). Newer Whizbang generators emit it under .whizbang-generated/; older ones used .whizbang/ (both are auto-discovered)."
+          "default": ".whizbang/cache/message-registry.json",
+          "description": "Path to the message registry JSON file (relative to workspace root). Newer Whizbang generators emit it under .whizbang/cache/; older ones used .whizbang/ (both are auto-discovered)."
         },
         "whizbang.autoGenerateRegistry": {
           "type": "boolean",
