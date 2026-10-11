@@ -1,9 +1,10 @@
 name: Release
 
 on:
-  # Trigger when a release PR is merged to main
-  pull_request:
-    types: [closed]
+  # The push a merged release PR makes to main, not the pull_request event: the publish environments admit only
+  # main, and GitHub evaluates an environment's branch policy against the run's ref, which for a pull_request run
+  # is refs/pull/N/merge. check-release finds the release PR through the pushed commit.
+  push:
     branches: [main]
 
   # Keep manual trigger for dry runs
@@ -32,6 +33,9 @@ jobs:
   check-release:
     name: Check Release Conditions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # find the PR this push merged
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
@@ -40,8 +44,9 @@ jobs:
         id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_MERGED: ${{ github.event.pull_request.merged }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
           DRY_RUN: ${{ inputs.dry_run }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
@@ -55,22 +60,27 @@ jobs:
               echo "should_release=true" >> "$GITHUB_OUTPUT"
               echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
             fi
-          elif [ "$PR_MERGED" == "true" ]; then
-            # Check if PR title matches release pattern
-            if [[ "$PR_TITLE" =~ ^chore\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+.*) ]]; then
+          else
+            # The PR whose merge produced this push to main, if any. Anything else that reaches main (a direct
+            # push, a merge of something that is not a release PR) does not release.
+            PR_JSON=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == env.SHA)][0] // empty')
+            PR_TITLE=$(jq -r '.title // ""' <<< "$PR_JSON")
+            PR_HEAD_REF=$(jq -r '.head.ref // ""' <<< "$PR_JSON")
+            if [ -z "$PR_JSON" ]; then
+              echo "This push to main did not come from a merged pull request; nothing to release."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              echo "version=" >> "$GITHUB_OUTPUT"
+            elif [[ "$PR_HEAD_REF" == release/v* ]] && [[ "$PR_TITLE" =~ ^chore\(release\):\ v([0-9]+\.[0-9]+\.[0-9]+.*) ]]; then
               VERSION="${BASH_REMATCH[1]}"
               echo "Release PR merged - version: $VERSION"
               echo "should_release=true" >> "$GITHUB_OUTPUT"
               echo "version=$VERSION" >> "$GITHUB_OUTPUT"
             else
-              echo "PR merged but not a release PR"
+              echo "Merged PR is not a release PR (title '$PR_TITLE', branch '$PR_HEAD_REF')"
               echo "should_release=false" >> "$GITHUB_OUTPUT"
               echo "version=" >> "$GITHUB_OUTPUT"
             fi
-          else
-            echo "PR not merged, skipping"
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "version=" >> "$GITHUB_OUTPUT"
           fi
 
   # ============================================================================
@@ -267,6 +277,9 @@ jobs:
     needs: [check-release, release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # VSCE_PAT lives in this environment, not in the repository, so only a job running on main can read it.
+    # The human approval is the approve job's (vscode-publish); this environment has none of its own.
+    environment: vscode-marketplace
 
     steps:
       - name: Checkout tag
