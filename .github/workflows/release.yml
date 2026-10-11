@@ -228,7 +228,7 @@ jobs:
 
       - name: Create GitHub Release (stable)
         if: ${{ !contains(needs.check-release.outputs.version, '-') }}
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.2.1
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: v${{ needs.check-release.outputs.version }}
           name: Release v${{ needs.check-release.outputs.version }}
@@ -238,7 +238,7 @@ jobs:
 
       - name: Create GitHub Pre-Release
         if: ${{ contains(needs.check-release.outputs.version, '-') }}
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.2.1
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: v${{ needs.check-release.outputs.version }}
           name: Pre-release v${{ needs.check-release.outputs.version }}
@@ -275,12 +275,12 @@ jobs:
           ref: v${{ needs.check-release.outputs.version }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '20.x'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        uses: pnpm/action-setup@078e9d416474b29c0c387560859308974f7e9c53 # v6.0.1
         with:
           version: 10
 
@@ -338,7 +338,7 @@ jobs:
           sha256sum "whizbang-${VERSION}.vsix" > "whizbang-${VERSION}.vsix.sha256"
 
       - name: Upload VSIX to GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.2.1
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: v${{ needs.check-release.outputs.version }}
           files: |
