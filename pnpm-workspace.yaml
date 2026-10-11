@@ -1,3 +1,10 @@
 # pnpm workspace configuration
 packages:
   - '.'
+
+# Install scripts pnpm may run. @vscode/vsce-sign fetches its platform binary, which vsce 3 uses when
+# publishing. keytar only stores credentials in the OS keychain, and publishing passes a token instead.
+onlyBuiltDependencies:
+  - '@vscode/vsce-sign'
+ignoredBuiltDependencies:
+  - keytar
