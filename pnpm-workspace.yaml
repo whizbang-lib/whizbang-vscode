@@ -8,3 +8,7 @@ onlyBuiltDependencies:
   - '@vscode/vsce-sign'
 ignoredBuiltDependencies:
   - keytar
+# The same decision in pnpm 11's form (pnpm/action-setup 6 runs through pnpm 11).
+allowBuilds:
+  '@vscode/vsce-sign': true
+  keytar: false
