@@ -1,12 +1,17 @@
 version: 2
 updates:
   # GitHub Actions updates
+  # Git flow: dependency bumps land on develop and reach main with the next release.
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
     labels:
       - "dependencies"
       - "github-actions"
@@ -19,10 +24,21 @@ updates:
   # npm/pnpm updates
   - package-ecosystem: "npm"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    groups:
+      npm-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # @types/vscode must not exceed engines.vscode (vsce refuses to package), so it moves
+      # with the engine by hand rather than to the latest VS Code.
+      - dependency-name: "@types/vscode"
+      # @types/node tracks the Node that VS Code's Electron runs, not the latest Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
       - "npm"
