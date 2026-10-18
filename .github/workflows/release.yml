@@ -177,6 +177,8 @@ jobs:
     name: Create Release
     needs: [check-release, approve]
     runs-on: ubuntu-latest
+    # The release app's secrets live in this environment (develop, main and release/v* only).
+    environment: release-app
     permissions:
       contents: write
 
@@ -382,6 +384,8 @@ jobs:
     name: Sync Main to Develop
     needs: [check-release, publish]
     runs-on: ubuntu-latest
+    # The release app's secrets live in this environment (develop, main and release/v* only).
+    environment: release-app
     permissions:
       contents: write
       pull-requests: write
