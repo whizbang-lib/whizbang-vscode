@@ -62,6 +62,11 @@ Publishing is fully automated via the **Start Release** workflow:
   Marketplace without a person approving a run of reviewed code.
 - **The Marketplace token.** `VSCE_PAT` is a secret of the `vscode-marketplace` environment, which also
   admits only `main`. A workflow on any other branch, including a pull request's, cannot read it.
-- **Pushes, PRs and tags** are made by the organization's release GitHub App (org secrets
-  `RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY`), not `GITHUB_TOKEN`, so the release and sync PRs run their
+- **Cutting a release waits for a build admin.** Start Release runs in the `release-cut` environment
+  (develop and main only, a `build-admins` member approves), and only build admins and the release app can
+  create a `release/` branch.
+- **Pushes, PRs and tags** are made by the organization's release GitHub App, whose `RELEASE_APP_ID` and
+  `RELEASE_APP_PRIVATE_KEY` are secrets of the `release-cut` and `release-app` (develop, main and
+  `release/v*`) environments only, so a workflow pushed on any other branch cannot mint its token. The app,
+  not `GITHUB_TOKEN`, makes them so the release and sync PRs run their
   checks and only that app may create a `v*` tag.

@@ -1,10 +1,16 @@
-# CODEOWNERS - Require approval for all changes
+# The pipeline, its gates and the build inputs belong to the build-admins team, as in the library and docs
+# repositories. With code-owner review required by the develop and main ruleset, a change to any of these
+# merges only with a build admin's approval, maintainers included. Everything else needs no particular owner.
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# Default owner for everything
-* @philcarbone
+# Workflows, composite actions, Dependabot, this file
+/.github/                   @whizbang-lib/build-admins
 
-# Critical files - require explicit approval
-.github/ @philcarbone
-package.json @philcarbone
-pnpm-lock.yaml @philcarbone
+# Dependencies, toolchain and packaging
+/package.json               @whizbang-lib/build-admins
+/pnpm-lock.yaml             @whizbang-lib/build-admins
+/pnpm-workspace.yaml        @whizbang-lib/build-admins
+/.npmrc                     @whizbang-lib/build-admins
+/.vscodeignore              @whizbang-lib/build-admins
+/tsconfig.json              @whizbang-lib/build-admins
+/.eslintrc.json             @whizbang-lib/build-admins

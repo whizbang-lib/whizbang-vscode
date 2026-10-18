@@ -26,6 +26,9 @@ jobs:
   create-release-pr:
     name: Create Release PR
     runs-on: ubuntu-latest
+    # The release app's secrets live only in environments (develop and main; a build admin approves a cut),
+    # so a workflow pushed on any other branch cannot mint a release token.
+    environment: release-cut
 
     steps:
       # The release app pushes the branch and opens the PR, so both start CI: a push or PR made with
